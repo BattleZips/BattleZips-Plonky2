@@ -3,7 +3,7 @@ use plonky2::{
     field::{extension::Extendable, goldilocks_field::GoldilocksField, types::Field},
     hash::hash_types::RichField,
     iop::{
-        target::{Target, BoolTarget},
+        target::{BoolTarget, Target},
         witness::{PartialWitness, WitnessWrite},
     },
     plonk::{
@@ -40,7 +40,7 @@ pub struct ShipPlacementTargets<const L: usize> {
 
 /**
  * Given an existing target value, ensure that it is less than 10
- * 
+ *
  * @param value - assigned value being queried for range
  * @param builder - circuit builder
  * @return - copy constraint fails if not < 10
@@ -66,8 +66,8 @@ pub fn less_than_10(value: Target, builder: &mut CircuitBuilder<F, D>) -> Result
 
 /**
  * Given a ship head coordinate, orientation, and offset, compute the occupied coordinate + a boolean of whether offset coordinate is in range
- * @dev copy constraint will fail if x/ y coordinate is not in range 
- * 
+ * @dev copy constraint will fail if x/ y coordinate is not in range
+ *
  * @param x - x coordinate of ship head
  * @param y - y coordinate of ship head
  * @param z - orientation of ship head
@@ -75,7 +75,13 @@ pub fn less_than_10(value: Target, builder: &mut CircuitBuilder<F, D>) -> Result
  * @param builder - circuit builder
  * @return - coordinate of ship placement
  */
-pub fn generate_coordiante(x: Target, y: Target, z: BoolTarget, offset: usize, builder: &mut CircuitBuilder<F, D>) -> Result<(Target)> {
+pub fn generate_coordiante(
+    x: Target,
+    y: Target,
+    z: BoolTarget,
+    offset: usize,
+    builder: &mut CircuitBuilder<F, D>,
+) -> Result<(Target)> {
     // define constants: offset length & y serialization (mul by 10)
     let offset_t = builder.constant(F::from_canonical_u8(offset as u8));
     let ten_t = builder.constant(F::from_canonical_u8(10));
@@ -95,11 +101,14 @@ pub fn generate_coordiante(x: Target, y: Target, z: BoolTarget, offset: usize, b
 
 /**
  * Given a ship as (x, y, z) with a constant ship length, compute the occupied coordinates
- * 
+ *
  * @param ship - ship instantiation coordinates
  * @param builder - circuit builder
  */
-pub fn ship_to_coordinates<const L: usize>(ship: (Target, Target, BoolTarget), builder: &mut CircuitBuilder<F, D>) -> Result<[Target; L]> {
+pub fn ship_to_coordinates<const L: usize>(
+    ship: (Target, Target, BoolTarget),
+    builder: &mut CircuitBuilder<F, D>,
+) -> Result<[Target; L]> {
     let (x, y, z) = ship;
     // range check ship head
     less_than_10(x, builder)?;
@@ -108,13 +117,18 @@ pub fn ship_to_coordinates<const L: usize>(ship: (Target, Target, BoolTarget), b
     let coordinates = builder.add_virtual_target_arr::<L>();
     for i in 0..L {
         let coordinate = generate_coordiante(x, y, z, i, builder)?;
+        // println!("coordinate = {:?}", coordinate.);
         builder.connect(coordinate, coordinates[i]);
-    };
+    }
+    builder.register_public_inputs(&coordinates);
     Ok(coordinates)
 }
 
-pub fn decompose_board(board: [Target; 2], builder: &mut CircuitBuilder<F, D>) -> Result<[BoolTarget; 100]> {
-    // define virtual 
+pub fn decompose_board(
+    board: [Target; 2],
+    builder: &mut CircuitBuilder<F, D>,
+) -> Result<[BoolTarget; 100]> {
+    // define virtual
     let bits = {
         let front = builder.split_le(board[0], 64);
         let back = builder.split_le(board[1], 36);
@@ -144,12 +158,13 @@ mod tests {
     //     println!("targets = {:?}", targets);
     // }
 
+    const D: usize = 2;
+    type C = PoseidonGoldilocksConfig;
+    type F = <C as GenericConfig<D>>::F;
+
     #[test]
     fn test_decompose_board() {
         // config
-        const D: usize = 2;
-        type C = PoseidonGoldilocksConfig;
-        type F = <C as GenericConfig<D>>::F;
         let config = CircuitConfig::standard_recursion_config();
         let mut builder = CircuitBuilder::<F, D>::new(config);
 
@@ -168,13 +183,43 @@ mod tests {
         // prove board placement
         let data = builder.build::<C>();
         let proof = data.prove(pw).unwrap();
-        
+
         // verify board placement
         let res = data.verify(proof);
         println!("yay: {:?}", res);
     }
 
+    #[test]
+
     fn test_ship_to_coordinates() {
-        
+        // config
+        let config = CircuitConfig::standard_recursion_config();
+        let mut builder = CircuitBuilder::<F, D>::new(config);
+
+        // targets
+        let ship: (Target, Target, BoolTarget) = {
+            let x = builder.add_virtual_target();
+            let y = builder.add_virtual_target();
+            let z = builder.add_virtual_bool_target_safe();
+            (x, y, z)
+        };
+
+        const L: usize = 5; // ship size of 5
+        let coordinates: [Target; L] = ship_to_coordinates::<L>(ship, &mut builder).unwrap();
+
+        // proof inputs
+        let mut pw = PartialWitness::new();
+        pw.set_target(ship.0, F::from_canonical_u64(4));
+        pw.set_target(ship.1, F::from_canonical_u64(4));
+        pw.set_bool_target(ship.2, false);
+
+        // prove board placement
+        let data = builder.build::<C>();
+        let proof = data.prove(pw).unwrap();
+        println!("coordinates: {:?}", coordinates);
+
+        // verify board placement
+        let res = data.verify(proof.clone());
+        println!("yay: {:?}", proof.public_inputs);
     }
 }
