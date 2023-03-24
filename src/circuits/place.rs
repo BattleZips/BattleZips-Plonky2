@@ -43,7 +43,7 @@ pub struct ShipPlacementTargets<const L: usize> {
  * 
  * @param value - assigned value being queried for range
  * @param builder - circuit builder
- * @return - range check enforced by permutation argument comparison with zero 
+ * @return - copy constraint fails if not < 10
  */
 pub fn less_than_10(value: Target, builder: &mut CircuitBuilder<F, D>) -> Result<()> {
     let mut exp = builder.constant(F::ONE);
@@ -58,39 +58,59 @@ pub fn less_than_10(value: Target, builder: &mut CircuitBuilder<F, D>) -> Result
         // multiply against range check expression
         exp = builder.mul(exp, checked_t);
     }
-    // check whether value is within range of 10
+    // return boolean check on whether value is within range of 10
     let zero = builder.constant(F::ZERO);
     builder.connect(exp, zero);
-    // return the 
     Ok(())
 }
 
+/**
+ * Given a ship head coordinate, orientation, and offset, compute the occupied coordinate + a boolean of whether offset coordinate is in range
+ * @dev copy constraint will fail if x/ y coordinate is not in range 
+ * 
+ * @param x - x coordinate of ship head
+ * @param y - y coordinate of ship head
+ * @param z - orientation of ship head
+ * @param offset - offset from ship head
+ * @param builder - circuit builder
+ * @return - coordinate of ship placement
+ */
+pub fn generate_coordiante(x: Target, y: Target, z: BoolTarget, offset: usize, builder: &mut CircuitBuilder<F, D>) -> Result<(Target)> {
+    // define constants: offset length & y serialization (mul by 10)
+    let offset_t = builder.constant(F::from_canonical_u8(offset as u8));
+    let ten_t = builder.constant(F::from_canonical_u8(10));
+    // add offsets to x
+    let x_offset_t = builder.add(x, offset_t);
+    let y_offset_t = builder.add(y, offset_t);
+    // check range for offset coordinate plane cooresponding to orinentiation
+    let range_check_t = builder.select(z, y_offset_t, x_offset_t);
+    less_than_10(range_check_t, builder)?;
+    // multiplex values for final coordiante expression
+    let x_t = builder.select(z, x, x_offset_t);
+    let y_t = builder.select(z, y_offset_t, y);
+    // compute coordinate value
+    let y_serialized_t = builder.mul(y_t, ten_t);
+    Ok(builder.add(x_t, y_serialized_t))
+}
+
+/**
+ * Given a ship as (x, y, z) with a constant ship length, compute the occupied coordinates
+ * 
+ * @param ship - ship instantiation coordinates
+ * @param builder - circuit builder
+ */
 pub fn ship_to_coordinates<const L: usize>(ship: (Target, Target, BoolTarget), builder: &mut CircuitBuilder<F, D>) -> Result<[Target; L]> {
     let (x, y, z) = ship;
     // range check ship head
-    // @TODO
+    less_than_10(x, builder)?;
+    less_than_10(y, builder)?;
     // build ship placement coordinate array
-    let mut coordinates = builder.add_virtual_target_arr::<L>();
+    let coordinates = builder.add_virtual_target_arr::<L>();
     for i in 0..L {
-        // copy ship head coordinate
-        let x_t = builder.add_virtual_target();
-        builder.connect(x, x_t);
-        let y_t = builder.add_virtual_target();
-        builder.connect(y, y_t);
-        
-        let z_t = builder.select(z, ship.0 + i, ship.0);
-
-        builder.select(z, x, y);
-        let y = builder.if_else(ship.2, ship.1, ship.1 + i);
-        let coordinates = y * 10 + x;
+        let coordinate = generate_coordiante(x, y, z, i, builder)?;
+        builder.connect(coordinate, coordinates[i]);
     };
-    // let mut coordinates = [Target::new(0); L];
-    // for i in 0..L as u8 {
-    //     let x = builder.if_else(ship.2, ship.0 + i, ship.0);
-    //     let y = builder.if_else(ship.2, ship.1, ship.1 + i);
-    //     coordinates[i as usize] = y * 10 + x;
-    // }
-    // Ok(coordinates)
+    Ok(coordinates)
 }
 
 pub fn decompose_board(board: [Target; 2], builder: &mut CircuitBuilder<F, D>) -> Result<[BoolTarget; 100]> {
@@ -152,5 +172,9 @@ mod tests {
         // verify board placement
         let res = data.verify(proof);
         println!("yay: {:?}", res);
+    }
+
+    fn test_ship_to_coordinates() {
+        
     }
 }
