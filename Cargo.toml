@@ -1,0 +1,13 @@
+[package]
+name = "battlezips_plonky2"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "battlezips_plonky2"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+anyhow = "1.0.70"
+plonky2 = "0.1.3"
