@@ -109,14 +109,20 @@ pub fn ship_to_coordinates<const L: usize>(
     ship: (Target, Target, BoolTarget),
     builder: &mut CircuitBuilder<F, D>,
 ) -> Result<[Target; L]> {
+    // connect values
     let (x, y, z) = ship;
+    let x_t = builder.add_virtual_target();
+    builder.connect(x, x_t);
+    let y_t = builder.add_virtual_target();
+    builder.connect(y, y_t);
+
     // range check ship head
-    less_than_10(x, builder)?;
-    less_than_10(y, builder)?;
+    less_than_10(x_t, builder)?;
+    less_than_10(y_t, builder)?;
     // build ship placement coordinate array
     let coordinates = builder.add_virtual_target_arr::<L>();
     for i in 0..L {
-        let coordinate = generate_coordiante(x, y, z, i, builder)?;
+        let coordinate = generate_coordiante(x_t, y_t, z, i, builder)?;
         // println!("coordinate = {:?}", coordinate.);
         builder.connect(coordinate, coordinates[i]);
     }
@@ -149,6 +155,8 @@ pub fn decompose_board(
 
 #[cfg(test)]
 mod tests {
+    use plonky2::field::types::PrimeField64;
+
     use super::*;
 
     // #[test]
@@ -203,15 +211,14 @@ mod tests {
             let z = builder.add_virtual_bool_target_safe();
             (x, y, z)
         };
-
         const L: usize = 5; // ship size of 5
         let coordinates: [Target; L] = ship_to_coordinates::<L>(ship, &mut builder).unwrap();
 
         // proof inputs
         let mut pw = PartialWitness::new();
-        pw.set_target(ship.0, F::from_canonical_u64(4));
-        pw.set_target(ship.1, F::from_canonical_u64(4));
-        pw.set_bool_target(ship.2, false);
+        pw.set_target(ship.0, F::from_canonical_u64(3));
+        pw.set_target(ship.1, F::from_canonical_u64(3));
+        pw.set_bool_target(ship.2, true);
 
         // prove board placement
         let data = builder.build::<C>();
@@ -220,6 +227,9 @@ mod tests {
 
         // verify board placement
         let res = data.verify(proof.clone());
-        println!("yay: {:?}", proof.public_inputs);
+        for i in 0..L {
+            let coordinate = proof.public_inputs[i].to_canonical();
+            println!("coordinate {}: {:?}", i, coordinate);
+        }
     }
 }
