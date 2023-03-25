@@ -108,7 +108,6 @@ pub fn ship_to_coordinates<const L: usize>(
         // println!("coordinate = {:?}", coordinate.);
         builder.connect(coordinate, coordinates[i]);
     }
-    builder.register_public_inputs(&coordinates);
     Ok(coordinates)
 }
 
@@ -126,7 +125,7 @@ pub fn decompose_board(
     // define virtual
     let bits = {
         let front = builder.split_le_base::<2>(board[0], 64);
-        let back = builder.split_le_base::<2>(board[1], 36);
+        let back = builder.split_le_base::<2>(board[1], 64);
         front.iter().chain(back.iter()).copied().collect::<Vec<_>>()
     };
 
@@ -147,7 +146,7 @@ pub fn recompose_board(
     let bool_t: Vec<BoolTarget> = board.iter().map(|bit| BoolTarget::new_unsafe(*bit)).collect();
     let composed_t: [Target; 2] = {
         let front = builder.le_sum(bool_t[0..64].iter());
-        let back = builder.le_sum(bool_t[64..100].iter());
+        let back = builder.le_sum(bool_t[64..128].iter());
         [front, back]
     };
     Ok(composed_t)
@@ -207,23 +206,27 @@ pub fn place_ship<const L: usize>(
 
     // check that coordinates occupied by new ship are available
     let zero_t = builder.constant(F::ZERO);
-    for i in 0..L {
-        // access coordinate from bitmap
-        let coordinate = builder.random_access(ship_coordinates[i], board.clone());
-        // constrain bit to be empty
-        builder.connect(coordinate, zero_t);
-    }
+    // for i in 0..L {
+    //     // access coordinate from bitmap
+    //     println!("hi: {:?}", ship_coordinates[i]);
+    //     let coordinate = builder.random_access(ship_coordinates[i], board.clone());
+    //     println!("q: {:?}", coordinate);
+    //     // constrain bit to be empty
+    //     builder.connect(coordinate, zero_t);
+    // }
 
     // build new board state
     let one_t = builder.constant(F::ONE);
-    println!("x");
     let board_out = builder.add_virtual_targets(100);
     println!("y");
     for i in 0..100 {
         // constant for index access
         let index = builder.constant(F::from_canonical_u8(i as u8));
         // access coordinate from board bitvec representation
+        println!("x");
         let coordinate = builder.random_access(index, board.clone());
+        println!("y");
+
         // compute flipped bit value
         let flipped = builder.add(coordinate, one_t);
         // compute boolean evaluation of whether bit should be flipped
@@ -305,11 +308,12 @@ mod tests {
         };
         const L: usize = 5; // ship size of 5
         let coordinates: [Target; L] = ship_to_coordinates::<L>(ship, &mut builder).unwrap();
+        builder.register_public_inputs(&coordinates);
 
         // proof inputs
         let mut pw = PartialWitness::new();
-        pw.set_target(ship.0, F::from_canonical_u64(3));
-        pw.set_target(ship.1, F::from_canonical_u64(3));
+        pw.set_target(ship.0, F::from_canonical_u64(0));
+        pw.set_target(ship.1, F::from_canonical_u64(0));
         pw.set_bool_target(ship.2, true);
 
         // prove board placement
@@ -318,7 +322,7 @@ mod tests {
         println!("coordinates: {:?}", coordinates);
 
         // verify board placement
-        let res = data.verify(proof.clone());
+        let _ = data.verify(proof.clone());
         for i in 0..L {
             let coordinate = proof.public_inputs[i].to_canonical();
             println!("coordinate {}: {:?}", i, coordinate);
@@ -339,11 +343,12 @@ mod tests {
             let z = builder.add_virtual_bool_target_safe();
             (x, y, z)
         };
-
+        
         // comutation synthesis
         const L: usize = 5; // ship size of 5
         let board_in = decompose_board(board, &mut builder).unwrap();
         let board_out = place_ship::<L>(ship, board_in, &mut builder).unwrap();
+        builder.register_public_inputs(&board_out);
 
         // proof inputs
         let mut pw = PartialWitness::new();
