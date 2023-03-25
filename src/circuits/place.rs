@@ -1,3 +1,8 @@
+use super::{C, D, F};
+use crate::gadgets::{
+    board::{decompose_board, recompose_board},
+    range::less_than_10,
+};
 use anyhow::Result;
 use plonky2::{
     field::{extension::Extendable, goldilocks_field::GoldilocksField, types::Field},
@@ -13,12 +18,6 @@ use plonky2::{
         proof::ProofWithPublicInputs,
     },
 };
-use super::{D, C, F};
-use crate::gadgets::{
-    range::less_than_10,
-    board::{decompose_board, recompose_board}
-};
-
 
 /**
  * Given a ship head coordinate, orientation, and offset, compute the occupied coordinate + a boolean of whether offset coordinate is in range
@@ -160,7 +159,7 @@ pub fn place_ship<const L: usize>(
         // copy constrain construction of board output
         builder.connect(board_out_coordinate, board_out[i]);
     }
-    
+
     Ok(board_out)
 }
 
@@ -175,9 +174,9 @@ pub fn place_ship<const L: usize>(
 
 #[cfg(test)]
 mod tests {
-    use plonky2::field::types::PrimeField64;
-
     use super::*;
+    use crate::utils::{board::Board, ship::Ship};
+    use plonky2::field::types::PrimeField64;
 
     // #[test]
     // fn test_compute_ship_placement_target_indexes() {
@@ -193,24 +192,44 @@ mod tests {
         let mut builder = CircuitBuilder::<F, D>::new(config);
 
         // targets
-        let board_pre: [Target; 2] = builder.add_virtual_targets(2).try_into().unwrap();
+        let board_t: [Target; 2] = builder.add_virtual_targets(2).try_into().unwrap();
 
         // decompose into bits
-        let bits = decompose_board(board_pre, &mut builder).unwrap();
-        println!("bits: {:?}", bits);
+        let bits = decompose_board(board_t, &mut builder).unwrap();
+
         // proof inputs
-        let board = [10u64, 20];
+        let board = Board::new(
+            Ship::new(3, 4, false),
+            Ship::new(9, 6, true),
+            Ship::new(0, 0, false),
+            Ship::new(0, 6, false),
+            Ship::new(6, 1, true),
+        );
+        let board_witness = board.canonical();
+        println!("lmao");
+        Board::print_canonical(&board_witness);
+        println!("ayy");
+
+        // proof witness
         let mut pw = PartialWitness::new();
-        pw.set_target(board_pre[0], F::from_canonical_u64(board[0]));
-        pw.set_target(board_pre[1], F::from_canonical_u64(board[0]));
+        pw.set_target(board_t[0], F::from_canonical_u64(board_witness[0]));
+        pw.set_target(board_t[1], F::from_canonical_u64(board_witness[1]));
+
+        //@dev
+        builder.register_public_inputs(&board_t);
 
         // prove board placement
         let data = builder.build::<C>();
         let proof = data.prove(pw).unwrap();
 
         // verify board placement
-        let res = data.verify(proof);
-        println!("yay: {:?}", res);
+        let res = data.verify(proof.clone());
+        let board_out = [
+            proof.clone().public_inputs[0].to_canonical(),
+            proof.clone().public_inputs[1].to_canonical(),
+        ];
+        println!("board[0] = {:?}", board_out[0]);
+        println!("board[1] = {:?}", board_out[1]);
     }
 
     #[test]
@@ -265,7 +284,6 @@ mod tests {
         };
         println!("xXXX: {:?}", F::characteristic());
 
-        
         // comutation synthesis
         const L: usize = 5; // ship size of 5
         let board_in = decompose_board(board, &mut builder).unwrap();
@@ -285,7 +303,7 @@ mod tests {
         // prove board placement
         let data = builder.build::<C>();
         let proof = data.prove(pw).unwrap();
-        
+
         // verify board placement
         let res = data.verify(proof.clone());
         for i in 0..L {

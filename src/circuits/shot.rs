@@ -75,6 +75,25 @@ mod tests {
     //     println!("targets = {:?}", targets);
     // }
 
+    // Carrier: 3, 4, false
+    // Battleship: 9, 6, true
+    // Cruiser: 0, 0, false
+    // Submarine: 0, 6, false
+    // Destroyer: 6, 1, true
+    // (Y)
+    // 9 | 0 0 0 0 0 0 0 0 0 1
+    // 8 | 0 0 0 0 0 0 0 0 0 1
+    // 7 | 0 0 0 0 0 0 0 0 0 1
+    // 6 | 1 1 1 0 0 0 0 0 0 1
+    // 5 | 0 0 0 0 0 0 0 0 0 0
+    // 4 | 0 0 0 1 1 1 1 1 0 0
+    // 3 | 0 0 0 0 0 0 0 0 0 0
+    // 2 | 0 0 0 0 0 0 1 0 0 0
+    // 1 | 0 0 0 0 0 0 1 0 0 0
+    // 0 | 1 1 1 0 0 0 0 0 0 0
+    //    -------------------- (X)
+    //     0 1 2 3 4 5 6 7 8 9
+
     #[test]
     fn test_shot() {
         // config
@@ -83,7 +102,6 @@ mod tests {
         config.num_wires = 137;
         config.num_routed_wires = 130;
         // config.zero_knowledge = true;
-        println!("Config: {:?}", config);
 
         // define circuit builder
         let mut builder = CircuitBuilder::<F, D>::new(config);
@@ -107,8 +125,7 @@ mod tests {
             Ship::new(6, 1, true),
         );
         let board_canonical = board.canonical();
-        Board::print_canonical(&board_canonical);
-        let shot = [1, 0];
+        let shot = [0, 5];
 
         // witness inputs
         let mut pw = PartialWitness::new();

@@ -65,14 +65,16 @@ impl Board {
         // get board as 100 LE bits
         let bits = self.bits();
         // convert into 2 u64s
-        let low = bits[0..64]
-            .iter()
-            .fold(0, |acc, &x| (acc << 1) | (x as u64));
-        let high = bits[64..100]
-            .iter()
-            .fold(0, |acc, &x| (acc << 1) | (x as u64));
-        // return canonical representation of a private board state
-        [low, high]
+        let mut result = [0u64; 2];
+        for (index, &bit) in bits.iter().enumerate() {
+            if bit {
+                let array_index = index / 64;
+                let bit_index = index % 64;
+                result[array_index] |= 1u64 << bit_index;
+            }
+        }
+
+        result
     }
 
     /**
