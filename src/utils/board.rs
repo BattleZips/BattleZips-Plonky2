@@ -9,16 +9,6 @@ pub struct Board {
 }
 
 impl Board {
-    // pub fn new() -> Self {
-    //     Self {
-    //         carrier: Ship::new(0, 0, false),
-    //         battleship: Ship::new(0, 0, false),
-    //         cruiser: Ship::new(0, 0, false),
-    //         submarine: Ship::new(0, 0, false),
-    //         destroyer: Ship::new(0, 0, false),
-    //     }
-    // }
-
     pub fn new(
         carrier: Ship<5>,
         battleship: Ship<4>,
@@ -37,7 +27,7 @@ impl Board {
 
     /**
      * Add a ship to the board
-     * 
+     *
      * @param ship - ship to add to the board
      * @param board - board to add the ship to as a mutable reference
      */
@@ -75,10 +65,14 @@ impl Board {
         // get board as 100 LE bits
         let bits = self.bits();
         // convert into 2 u64s
-        let low = bits[0..64].iter().fold(0, |acc, &x| (acc << 1) | (x as u64));
-        let high = bits[64..100].iter().fold(0, |acc, &x| (acc << 1) | (x as u64));
+        let low = bits[0..64]
+            .iter()
+            .fold(0, |acc, &x| (acc << 1) | (x as u64));
+        let high = bits[64..100]
+            .iter()
+            .fold(0, |acc, &x| (acc << 1) | (x as u64));
         // return canonical representation of a private board state
-        [low, high] 
+        [low, high]
     }
 
     /**
@@ -91,11 +85,7 @@ impl Board {
             if i % 10 == 0 {
                 let mut out = format!("{} |", i / 10);
                 for j in 0..10 {
-                    out = format!(
-                        "{} {}",
-                        out,
-                        board[i + j] as u8
-                    );
+                    out = format!("{} {}", out, board[i + j] as u8);
                 }
                 lines.push(out);
             }
@@ -110,12 +100,12 @@ impl Board {
     }
 }
 
-#[test]
-fn test_board() {
+#[cfg(test)]
+mod test {
     use super::*;
-    
+
     #[test]
-    pub fn test_board_print() {
+    fn test_board_print() {
         let board = Board::new(
             Ship::new(3, 4, false),
             Ship::new(9, 6, true),
