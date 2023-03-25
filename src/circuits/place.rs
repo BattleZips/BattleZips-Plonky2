@@ -189,6 +189,7 @@ mod tests {
     fn test_decompose_board() {
         // config
         let config = CircuitConfig::standard_recursion_config();
+       
         let mut builder = CircuitBuilder::<F, D>::new(config);
 
         // targets
@@ -271,7 +272,10 @@ mod tests {
     #[test]
     pub fn test_place_ship() {
         // config
-        let config = CircuitConfig::standard_recursion_config();
+        let mut config = CircuitConfig::standard_recursion_config();
+        config.num_wires = 137;
+        config.num_routed_wires = 130;
+        
         let mut builder = CircuitBuilder::<F, D>::new(config);
 
         // targets

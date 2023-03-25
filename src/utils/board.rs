@@ -1,5 +1,12 @@
+use crate::circuits::F;
 use crate::utils::ship::Ship;
+use plonky2::{
+    field::types::{Field, PrimeField64},
+    hash::poseidon::PoseidonHash,
+    plonk::config::Hasher,
+};
 
+#[derive(Debug, Clone)]
 pub struct Board {
     pub carrier: Ship<5>,
     pub battleship: Ship<4>,
@@ -75,6 +82,29 @@ impl Board {
         }
 
         result
+    }
+
+    /**
+     * Hash the board state into a 4 u64 array
+     * @todo
+     */
+    pub fn hash(&self) -> [u64; 4] {
+        // get board state as canonical serialized u128
+        let board: [F; 2] = self
+            .canonical()
+            .iter()
+            .map(|x| F::from_canonical_u64(*x))
+            .collect::<Vec<F>>()
+            .try_into()
+            .unwrap();
+        // hash board state into 4 u64s
+        PoseidonHash::hash_no_pad(&board)
+            .elements
+            .iter()
+            .map(|x| x.to_canonical_u64())
+            .collect::<Vec<u64>>()
+            .try_into()
+            .unwrap()
     }
 
     /**

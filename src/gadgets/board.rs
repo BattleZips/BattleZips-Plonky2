@@ -1,7 +1,11 @@
 use crate::circuits::{D, F};
 use anyhow::Result;
 use plonky2::{
-    iop::target::{BoolTarget, Target},
+    iop::target::{Target, BoolTarget},
+    hash::{
+        hash_types::HashOutTarget,
+        poseidon::PoseidonHash,
+    },
     plonk::circuit_builder::CircuitBuilder,
 };
 
@@ -47,4 +51,20 @@ pub fn recompose_board(
         [front, back]
     };
     Ok(composed_t)
+}
+
+/**
+ * Given the canonical representation of board state, return the hash of the board state
+ * @todo: add private salt to hash
+ * 
+ * @param board - u128 target representing private board state in LE
+ * @param builder - circuit builder
+ * @return - target of constrained computation of board hash
+ */
+pub fn hash_board(
+    board: [Target; 2],
+    builder: &mut CircuitBuilder<F, D>,
+) -> Result<HashOutTarget> {
+    let hash = builder.hash_n_to_hash_no_pad::<PoseidonHash>(board.try_into().unwrap());
+    Ok(hash)
 }
