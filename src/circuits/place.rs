@@ -25,19 +25,6 @@ pub struct ShipPlacementTargets<const L: usize> {
     ship: [Target; 3], // x, y, z
 }
 
-// pub fn compute_ship_placement_target_indexes<const L: usize>(ship: [Target; 3]) -> Result<()> {
-//     let config = CircuitConfig::standard_recursion_config();
-//     let pw = PartialWitness::new();
-//     let mut builder = CircuitBuilder::<F, D>::new(config);
-//     let limbs = {
-//         let front = builder.split_le(board_pre[0], 64);
-//         let back = builder.split_le(board_pre[1], 64);
-//         front
-//     };
-//     println!("limbs = {:?}", limbs);
-//     Ok(())
-// }
-
 /**
  * Given an existing target value, ensure that it is less than 10
  *
@@ -111,18 +98,13 @@ pub fn ship_to_coordinates<const L: usize>(
 ) -> Result<[Target; L]> {
     // connect values
     let (x, y, z) = ship;
-    let x_t = builder.add_virtual_target();
-    builder.connect(x, x_t);
-    let y_t = builder.add_virtual_target();
-    builder.connect(y, y_t);
-
     // range check ship head
-    less_than_10(x_t, builder)?;
-    less_than_10(y_t, builder)?;
+    less_than_10(x, builder)?;
+    less_than_10(y, builder)?;
     // build ship placement coordinate array
     let coordinates = builder.add_virtual_target_arr::<L>();
     for i in 0..L {
-        let coordinate = generate_coordiante(x_t, y_t, z, i, builder)?;
+        let coordinate = generate_coordiante(x, y, z, i, builder)?;
         // println!("coordinate = {:?}", coordinate.);
         builder.connect(coordinate, coordinates[i]);
     }
@@ -130,18 +112,129 @@ pub fn ship_to_coordinates<const L: usize>(
     Ok(coordinates)
 }
 
+/**
+ * Decompose serialized u128 into 100 LE bits
+ *
+ * @param board - u128 target to decompose
+ * @param builder - circuit builder
+ * @return - ordered 100 target bits representing private board state
+ */
 pub fn decompose_board(
     board: [Target; 2],
     builder: &mut CircuitBuilder<F, D>,
-) -> Result<[BoolTarget; 100]> {
+) -> Result<Vec<Target>> {
     // define virtual
     let bits = {
-        let front = builder.split_le(board[0], 64);
-        let back = builder.split_le(board[1], 36);
+        let front = builder.split_le_base::<2>(board[0], 64);
+        let back = builder.split_le_base::<2>(board[1], 36);
         front.iter().chain(back.iter()).copied().collect::<Vec<_>>()
     };
 
-    Ok(bits.try_into().unwrap())
+    Ok(bits)
+}
+
+/**
+ * Recompose 100 LE bits into serialized u128
+ * 
+ * @param board - 100 LE bits representing private board state
+ * @param builder - circuit builder
+ * @return - u128 target representing private board state
+ */
+pub fn recompose_board(
+    board: Vec<Target>,
+    builder: &mut CircuitBuilder<F, D>
+) -> Result<[Target; 2]> {
+    let bool_t: Vec<BoolTarget> = board.iter().map(|bit| BoolTarget::new_unsafe(*bit)).collect();
+    let composed_t: [Target; 2] = {
+        let front = builder.le_sum(bool_t[0..64].iter());
+        let back = builder.le_sum(bool_t[64..100].iter());
+        [front, back]
+    };
+    Ok(composed_t)
+}
+
+/**
+ * Constructs an equation where the output will only be 1 if the input is one of the values in coordinates
+ *
+ * @param value - the value being checked for membership in coordinates
+ * @param coordinate - values that should return 1 if inputted
+ * @param builder - circuit builder
+ * @return - expression that evaluates whether input is in coordinates
+ */
+pub fn interpolate_bitflip_bool<const L: usize>(
+    value: Target,
+    coordiantes: [Target; L],
+    builder: &mut CircuitBuilder<F, D>,
+) -> Result<BoolTarget> {
+    // starting eq to check 1 = 0
+    let mut exp_t = builder.constant(F::ONE);
+    // iterate over coordinates to check identity of target
+    for i in 0..L {
+        // copy coordinate
+        let coordinate_t = builder.add_virtual_target();
+        builder.connect(coordiantes[i], coordinate_t);
+        // check additive identity
+        let checked_t = builder.sub(coordinate_t, value);
+        // multiply against expression to interpolate bool
+        exp_t = builder.mul(exp_t, checked_t);
+    }
+    // check if interpolated expression = 0
+    let zero_t = builder.constant(F::ZERO);
+    Ok(builder.is_equal(exp_t, zero_t))
+}
+
+/**
+ * Given a ship and board, constrain the placement of the ship
+ * @dev prevent overlapping ships
+ *
+ * @param ship - ship instantiation coordinates
+ * @param board - board state as a 100 bit vector
+ * @param builder - circuit builder
+ * @return - new board state as 100 bit vector with ship coordinates bitflipped
+ */
+pub fn place_ship<const L: usize>(
+    ship: (Target, Target, BoolTarget),
+    board: Vec<Target>,
+    builder: &mut CircuitBuilder<F, D>,
+) -> Result<Vec<Target>> {
+    // construct the ship placement coordinates
+    // @notice: range checks placement
+    let ship_coordinates = ship_to_coordinates::<L>(ship, builder)?;
+
+    // // decompose board from u128 to 100 bits
+    // // @notice: does not use BoolTarget for random_access compatibility
+    // let board_bits = decompose_board(board, builder)?;
+
+    // check that coordinates occupied by new ship are available
+    let zero_t = builder.constant(F::ZERO);
+    for i in 0..L {
+        // access coordinate from bitmap
+        let coordinate = builder.random_access(ship_coordinates[i], board.clone());
+        // constrain bit to be empty
+        builder.connect(coordinate, zero_t);
+    }
+
+    // build new board state
+    let one_t = builder.constant(F::ONE);
+    println!("x");
+    let board_out = builder.add_virtual_targets(100);
+    println!("y");
+    for i in 0..100 {
+        // constant for index access
+        let index = builder.constant(F::from_canonical_u8(i as u8));
+        // access coordinate from board bitvec representation
+        let coordinate = builder.random_access(index, board.clone());
+        // compute flipped bit value
+        let flipped = builder.add(coordinate, one_t);
+        // compute boolean evaluation of whether bit should be flipped
+        let should_flip = interpolate_bitflip_bool::<L>(index, ship_coordinates, builder)?;
+        // multiplex bit for new board state
+        let board_out_coordinate = builder.select(should_flip, flipped, coordinate);
+        // copy constrain construction of board output
+        builder.connect(board_out_coordinate, board_out[i]);
+    }
+    
+    Ok(board_out)
 }
 
 // use ensure to check constraints
@@ -198,7 +291,6 @@ mod tests {
     }
 
     #[test]
-
     fn test_ship_to_coordinates() {
         // config
         let config = CircuitConfig::standard_recursion_config();
@@ -224,6 +316,48 @@ mod tests {
         let data = builder.build::<C>();
         let proof = data.prove(pw).unwrap();
         println!("coordinates: {:?}", coordinates);
+
+        // verify board placement
+        let res = data.verify(proof.clone());
+        for i in 0..L {
+            let coordinate = proof.public_inputs[i].to_canonical();
+            println!("coordinate {}: {:?}", i, coordinate);
+        }
+    }
+
+    #[test]
+    pub fn test_place_ship() {
+        // config
+        let config = CircuitConfig::standard_recursion_config();
+        let mut builder = CircuitBuilder::<F, D>::new(config);
+
+        // targets
+        let board = builder.add_virtual_target_arr::<2>();
+        let ship: (Target, Target, BoolTarget) = {
+            let x = builder.add_virtual_target();
+            let y = builder.add_virtual_target();
+            let z = builder.add_virtual_bool_target_safe();
+            (x, y, z)
+        };
+
+        // comutation synthesis
+        const L: usize = 5; // ship size of 5
+        let board_in = decompose_board(board, &mut builder).unwrap();
+        let board_out = place_ship::<L>(ship, board_in, &mut builder).unwrap();
+
+        // proof inputs
+        let mut pw = PartialWitness::new();
+        /// board inputs (= 0 for now)
+        pw.set_target(board[0], F::ZERO);
+        pw.set_target(board[1], F::ZERO);
+        /// ship inputs
+        pw.set_target(ship.0, F::from_canonical_u64(3));
+        pw.set_target(ship.1, F::from_canonical_u64(3));
+        pw.set_bool_target(ship.2, true);
+
+        // prove board placement
+        let data = builder.build::<C>();
+        let proof = data.prove(pw).unwrap();
 
         // verify board placement
         let res = data.verify(proof.clone());
