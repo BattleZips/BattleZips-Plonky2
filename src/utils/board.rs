@@ -98,6 +98,32 @@ impl Board {
             println!("{}", line);
         }
     }
+
+    pub fn print_canonical(board: &[u64; 2]) {
+        // convert board into 100 LE bits
+        let mut bits = [false; 100];
+        for i in 0..100 {
+            bits[i] = (board[i / 64] >> (i % 64)) & 1 == 1;
+        }
+        // render board
+        let mut lines = Vec::<String>::new();
+        for i in 0..100 {
+            if i % 10 == 0 {
+                let mut out = format!("{} |", i / 10);
+                for j in 0..10 {
+                    out = format!("{} {}", out, bits[i + j] as u8);
+                }
+                lines.push(out);
+            }
+        }
+        lines.push(String::from(" (Y)"));
+        lines.reverse();
+        lines.push(String::from("   -------------------- (X)"));
+        lines.push(String::from("    0 1 2 3 4 5 6 7 8 9"));
+        for line in lines {
+            println!("{}", line);
+        }
+    }
 }
 
 #[cfg(test)]

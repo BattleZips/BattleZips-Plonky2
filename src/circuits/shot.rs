@@ -78,7 +78,14 @@ mod tests {
     #[test]
     fn test_shot() {
         // config
-        let config = CircuitConfig::standard_recursion_config();
+        let mut config = CircuitConfig::standard_recursion_config();
+        // set wires for random access gate
+        config.num_wires = 137;
+        config.num_routed_wires = 130;
+        // config.zero_knowledge = true;
+        println!("Config: {:?}", config);
+
+        // define circuit builder
         let mut builder = CircuitBuilder::<F, D>::new(config);
 
         // targets
@@ -100,7 +107,8 @@ mod tests {
             Ship::new(6, 1, true),
         );
         let board_canonical = board.canonical();
-        let shot = [0, 0];
+        Board::print_canonical(&board_canonical);
+        let shot = [1, 0];
 
         // witness inputs
         let mut pw = PartialWitness::new();
@@ -110,6 +118,7 @@ mod tests {
         pw.set_target(shot_t[1], F::from_canonical_u64(shot[1]));
         //@dev: export hit directly
         builder.register_public_input(hit);
+        builder.register_public_input(serialized_t);
 
         // prove board placement
         let data = builder.build::<C>();
@@ -121,6 +130,8 @@ mod tests {
 
         // print hit evaluation
         println!("hit: {:?}", proof.clone().public_inputs[0].to_canonical());
+        println!("shot: {:?}", proof.clone().public_inputs[1].to_canonical());
+
     }
 
 }
