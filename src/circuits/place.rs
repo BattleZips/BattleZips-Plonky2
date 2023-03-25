@@ -13,43 +13,12 @@ use plonky2::{
         proof::ProofWithPublicInputs,
     },
 };
+use super::{D, C, F};
+use crate::gadgets::{
+    range::less_than_10,
+    board::{decompose_board, recompose_board}
+};
 
-const D: usize = 2;
-type C = PoseidonGoldilocksConfig;
-type F = <C as GenericConfig<D>>::F;
-
-// L: length of ship placement
-pub struct ShipPlacementTargets<const L: usize> {
-    board_pre: [Target; 2],
-    board_post: [Target; 2],
-    ship: [Target; 3], // x, y, z
-}
-
-/**
- * Given an existing target value, ensure that it is less than 10
- *
- * @param value - assigned value being queried for range
- * @param builder - circuit builder
- * @return - copy constraint fails if not < 10
- */
-pub fn less_than_10(value: Target, builder: &mut CircuitBuilder<F, D>) -> Result<()> {
-    let mut exp = builder.constant(F::ONE);
-    for i in 0..9 {
-        // copy value being compared
-        let value_t = builder.add_virtual_target();
-        builder.connect(value, value_t);
-        // constant being checked for range equality
-        let range_t = builder.constant(F::from_canonical_u8(i));
-        // subtract value against constant to demonstrate range
-        let checked_t = builder.sub(range_t, value_t);
-        // multiply against range check expression
-        exp = builder.mul(exp, checked_t);
-    }
-    // return boolean check on whether value is within range of 10
-    let zero = builder.constant(F::ZERO);
-    builder.connect(exp, zero);
-    Ok(())
-}
 
 /**
  * Given a ship head coordinate, orientation, and offset, compute the occupied coordinate + a boolean of whether offset coordinate is in range
@@ -112,47 +81,6 @@ pub fn ship_to_coordinates<const L: usize>(
 }
 
 /**
- * Decompose serialized u128 into 100 LE bits
- *
- * @param board - u128 target to decompose
- * @param builder - circuit builder
- * @return - ordered 100 target bits representing private board state
- */
-pub fn decompose_board(
-    board: [Target; 2],
-    builder: &mut CircuitBuilder<F, D>,
-) -> Result<Vec<Target>> {
-    // define virtual
-    let bits = {
-        let front = builder.split_le_base::<2>(board[0], 64);
-        let back = builder.split_le_base::<2>(board[1], 64);
-        front.iter().chain(back.iter()).copied().collect::<Vec<_>>()
-    };
-
-    Ok(bits)
-}
-
-/**
- * Recompose 100 LE bits into serialized u128
- * 
- * @param board - 100 LE bits representing private board state
- * @param builder - circuit builder
- * @return - u128 target representing private board state
- */
-pub fn recompose_board(
-    board: Vec<Target>,
-    builder: &mut CircuitBuilder<F, D>
-) -> Result<[Target; 2]> {
-    let bool_t: Vec<BoolTarget> = board.iter().map(|bit| BoolTarget::new_unsafe(*bit)).collect();
-    let composed_t: [Target; 2] = {
-        let front = builder.le_sum(bool_t[0..64].iter());
-        let back = builder.le_sum(bool_t[64..128].iter());
-        [front, back]
-    };
-    Ok(composed_t)
-}
-
-/**
  * Constructs an equation where the output will only be 1 if the input is one of the values in coordinates
  *
  * @param value - the value being checked for membership in coordinates
@@ -200,20 +128,16 @@ pub fn place_ship<const L: usize>(
     // @notice: range checks placement
     let ship_coordinates = ship_to_coordinates::<L>(ship, builder)?;
 
-    // // decompose board from u128 to 100 bits
-    // // @notice: does not use BoolTarget for random_access compatibility
-    // let board_bits = decompose_board(board, builder)?;
-
     // check that coordinates occupied by new ship are available
     let zero_t = builder.constant(F::ZERO);
-    // for i in 0..L {
-    //     // access coordinate from bitmap
-    //     println!("hi: {:?}", ship_coordinates[i]);
-    //     let coordinate = builder.random_access(ship_coordinates[i], board.clone());
-    //     println!("q: {:?}", coordinate);
-    //     // constrain bit to be empty
-    //     builder.connect(coordinate, zero_t);
-    // }
+    for i in 0..L {
+        // access coordinate from bitmap
+        println!("hi: {:?}", ship_coordinates[i]);
+        let coordinate = builder.random_access(ship_coordinates[i], board.clone());
+        println!("q: {:?}", coordinate);
+        // constrain bit to be empty
+        builder.connect(coordinate, zero_t);
+    }
 
     // build new board state
     let one_t = builder.constant(F::ONE);
@@ -261,10 +185,6 @@ mod tests {
     //     let targets = compute_ship_placement_target_indexes::<3>(ship);
     //     println!("targets = {:?}", targets);
     // }
-
-    const D: usize = 2;
-    type C = PoseidonGoldilocksConfig;
-    type F = <C as GenericConfig<D>>::F;
 
     #[test]
     fn test_decompose_board() {
