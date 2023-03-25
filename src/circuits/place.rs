@@ -343,6 +343,8 @@ mod tests {
             let z = builder.add_virtual_bool_target_safe();
             (x, y, z)
         };
+        println!("xXXX: {:?}", F::characteristic());
+
         
         // comutation synthesis
         const L: usize = 5; // ship size of 5
@@ -356,14 +358,14 @@ mod tests {
         pw.set_target(board[0], F::ZERO);
         pw.set_target(board[1], F::ZERO);
         /// ship inputs
-        pw.set_target(ship.0, F::from_canonical_u64(3));
+        pw.set_target(ship.0, F::from_noncanonical_u128(3));
         pw.set_target(ship.1, F::from_canonical_u64(3));
         pw.set_bool_target(ship.2, true);
 
         // prove board placement
         let data = builder.build::<C>();
         let proof = data.prove(pw).unwrap();
-
+        
         // verify board placement
         let res = data.verify(proof.clone());
         for i in 0..L {
