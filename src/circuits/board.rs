@@ -33,7 +33,7 @@ pub struct BoardCircuitOutputs {
     commitment: [u64; 4],
 }
 
-pub type ShipTarget = (Target, Target, Target);
+pub type ShipTarget = (Target, Target, BoolTarget);
 
 pub struct BoardCircuit {
     data: CircuitData<F, C, D>,
@@ -97,7 +97,7 @@ impl BoardCircuit {
 
     pub fn prove(&self, board: Board) -> Result<ProofWithPublicInputs<F, C, D>> {
         // build ship witness
-        let ships: [(u8, u8, u8); 5] = [
+        let ships: [(u8, u8, bool); 5] = [
             board.carrier.canonical(),
             board.battleship.canonical(),
             board.cruiser.canonical(),
@@ -110,7 +110,7 @@ impl BoardCircuit {
         for i in 0..ships.len() {
             pw.set_target(self.ships[i].0, F::from_canonical_u8(ships[i].0));
             pw.set_target(self.ships[i].1, F::from_canonical_u8(ships[i].1));
-            pw.set_target(self.ships[i].2, F::from_canonical_u8(ships[i].2));
+            pw.set_bool_target(self.ships[i].2, ships[i].2);
         }
 
         // PROVE //
@@ -166,7 +166,7 @@ mod tests {
         assert_eq!(output.commitment, expected_commitment);
     }
 
-    fn test_invalid_board() {
+    // fn test_invalid_board() {
 
-    }
+    // }
 }

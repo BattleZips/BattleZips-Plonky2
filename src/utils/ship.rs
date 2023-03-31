@@ -52,8 +52,8 @@ impl<const L: usize> Ship<L> {
         coordinates
     }
 
-    pub fn canonical(&self) -> (u8, u8, u8) {
-        (self.x, self.y, self.z as u8)
+    pub fn canonical(&self) -> (u8, u8, bool) {
+        (self.x, self.y, self.z)
     }
 
     // /**
