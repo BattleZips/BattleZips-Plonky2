@@ -71,27 +71,31 @@ impl BoardCircuit {
                 .try_into()
                 .unwrap()
         };
-        // board (init) //
-        let board_initial = builder.constants(&[F::from_canonical_u64(0); 128]);
 
+        // generate 
+        // board (init) //
+        // let board_serialized = builder.constants(&[F::from_canonical_u64(0); 2]);
+        // let board_initial = builder.
+        let board_initial = builder.constants(&[F::from_canonical_u64(0); 128]);
         // place ships on board
-        let board_0 = place_ship::<5>(ships[0], board_initial, &mut builder).unwrap();
-        // let board_1 = place_ship::<4>(ships[1], board_0.clone(), &mut builder).unwrap();
-        // let board_2 = place_ship::<3>(ships[2], board_1, &mut builder).unwrap();
-        // let board_3 = place_ship::<3>(ships[3], board_2, &mut builder).unwrap();
-        // let board_final = place_ship::<2>(ships[4], board_3, &mut builder).unwrap();
+        let board_0 = place_ship::<5>(ships[0], board_initial.clone(), &mut builder).unwrap();
+        let board_1 = place_ship::<4>(ships[1], board_0.clone(), &mut builder).unwrap();
+        let board_2 = place_ship::<3>(ships[2], board_1, &mut builder).unwrap();
+        let board_3 = place_ship::<3>(ships[3], board_2, &mut builder).unwrap();
+        let board_final = place_ship::<2>(ships[4], board_3, &mut builder).unwrap();
 
         // recompose board into u128
-        // let board = recompose_board(board_final, &mut builder).unwrap();
+        let board = recompose_board(board_final.clone(), &mut builder).unwrap();
         // println!("LMAO: {:?}", board);
         // hash the board into the commitment
-        // let commitment = hash_board(board, &mut builder).unwrap();
+        let commitment = hash_board(board, &mut builder).unwrap();
 
         // register public inputs (board commitment)
-        // builder.register_public_inputs(&commitment.elements);
+        builder.register_public_inputs(&commitment.elements);
 
         // @dev
         // builder.register_public_inputs(&board_0);
+        builder.register_public_inputs(&board_initial);
         // export circuit data
         let data = builder.build::<C>();
         Ok(Self { data, ships })

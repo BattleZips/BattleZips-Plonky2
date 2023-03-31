@@ -49,9 +49,9 @@ pub fn recompose_board(
         .collect();
     let composed_t: [Target; 2] = {
 
-        let front = builder.le_sum(bool_t[0..63].iter());
+        let front = builder.le_sum(bool_t[0..64].iter());
         println!("front: {:?}", front);
-        let back = builder.le_sum(bool_t[63..126].iter());
+        let back = builder.le_sum(bool_t[64..128].iter());
         println!("back: {:?}", back);
 
         [front, back]
@@ -209,10 +209,10 @@ pub fn place_ship<const L: usize>(
         // copy constrain construction of board output
         builder.connect(board_out_coordinate, board_out[i]);
     }
-    // for i in 100..128 {
-    //     // copy constrain construction of board output
-    //     builder.connect(board[i], board_out[i]);
-    // }
+    for i in 100..128 {
+        // copy constrain construction of board output
+        builder.connect(board[i], board_out[i]);
+    }
     // return new board state
     Ok(board_out)
 }

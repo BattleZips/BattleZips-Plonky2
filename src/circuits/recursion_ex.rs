@@ -39,8 +39,11 @@ use crate::{
     circuits::shot::ShotCircuit,
     utils::{board::Board, ship::Ship},
 };
+
+use num::bigint::BigUint;
+
 use anyhow::Result;
-use plonky2::field::{secp256k1_scalar::Secp256K1Scalar, types::Sample};
+use plonky2::field::{secp256k1_scalar::Secp256K1Scalar, types::{Sample, Field}};
 use plonky2_ecdsa::curve::{
     curve_types::Curve as TCurve,
     ecdsa::{sign_message, verify_message, ECDSAPublicKey, ECDSASecretKey, ECDSASignature},
@@ -51,6 +54,19 @@ type Curve = Secp256K1;
 type PublicKey = ECDSAPublicKey<Curve>;
 type MessageHash = <Curve as TCurve>::ScalarField;
 type Signature = ECDSASignature<Curve>;
+
+fn biguint_from_array(arr: [u64; 4]) -> BigUint {
+    BigUint::from_slice(&[
+        arr[0] as u32,
+        (arr[0] >> 32) as u32,
+        arr[1] as u32,
+        (arr[1] >> 32) as u32,
+        arr[2] as u32,
+        (arr[2] >> 32) as u32,
+        arr[3] as u32,
+        (arr[3] >> 32) as u32,
+    ])
+}
 
 fn make_shot_proof() {
     type Field = <Curve as TCurve>::ScalarField;
@@ -70,7 +86,8 @@ fn make_shot_proof() {
     let commitment = output.commitment;
     let secret_key = ECDSASecretKey::<Curve>(Secp256K1Scalar::rand());
     let public_key = secret_key.to_public();
-    let signature = sign_message(commitment, secret_key);
+    let int = biguint_from_array(commitment);
+    let signature = sign_message(Secp256K1Scalar::from_noncanonical_biguint(int), secret_key);
     let verified = verify_message(msg, signature, public_key);
     println!("Verified: {}", verified.to_string());
 }
