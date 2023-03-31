@@ -32,6 +32,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "plonky2",
+ "plonky2_ecdsa",
 ]
 
 [[package]]
@@ -330,6 +331,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "plonky2_ecdsa"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "deafe734e22d96f69df86df24e4533818b4172df745e8108dadceb7364eeaaef"
+dependencies = [
+ "anyhow",
+ "itertools",
+ "num",
+ "plonky2",
+ "plonky2_maybe_rayon",
+ "plonky2_u32",
+ "serde",
+]
+
+[[package]]
 name = "plonky2_field"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -352,6 +368,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "655cdcdb13c260cdb42b29b55247f2f66479d14342b6be3dc688efc54d3e24c4"
 dependencies = [
  "rayon",
+]
+
+[[package]]
+name = "plonky2_u32"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0b4bfce2e95b9eb97a40d0d737b4e4711a0eba02175e085944497108140688f"
+dependencies = [
+ "anyhow",
+ "itertools",
+ "num",
+ "plonky2",
 ]
 
 [[package]]

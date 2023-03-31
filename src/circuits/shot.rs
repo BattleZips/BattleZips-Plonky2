@@ -21,15 +21,15 @@ use plonky2::{
 };
 
 pub struct ShotCircuitOutputs {
-    shot: u64,
-    hit: u64,
-    commitment: [u64; 4],
+    pub shot: u64,
+    pub hit: u64,
+    pub commitment: [u64; 4],
 }
 
 pub struct ShotCircuit {
-    data: CircuitData<F, C, D>,
-    board_t: [Target; 2],
-    shot_t: [Target; 2],
+    pub data: CircuitData<F, C, D>,
+    pub board_t: [Target; 2],
+    pub shot_t: [Target; 2],
 }
 
 impl ShotCircuit {
@@ -160,7 +160,6 @@ mod tests {
 
     #[test]
     fn test_shot_hit() {
-
         // define inputs
         let board = Board::new(
             Ship::new(3, 4, false),
