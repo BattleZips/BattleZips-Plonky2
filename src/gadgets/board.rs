@@ -48,8 +48,12 @@ pub fn recompose_board(
         .map(|bit| BoolTarget::new_unsafe(*bit))
         .collect();
     let composed_t: [Target; 2] = {
-        let front = builder.le_sum(bool_t[0..64].iter());
-        let back = builder.le_sum(bool_t[64..128].iter());
+
+        let front = builder.le_sum(bool_t[0..63].iter());
+        println!("front: {:?}", front);
+        let back = builder.le_sum(bool_t[63..126].iter());
+        println!("back: {:?}", back);
+
         [front, back]
     };
     Ok(composed_t)
@@ -190,7 +194,7 @@ pub fn place_ship<const L: usize>(
 
     // build new board state
     let one_t = builder.constant(F::ONE);
-    let board_out = builder.add_virtual_targets(100);
+    let board_out = builder.add_virtual_targets(128);
     for i in 0..100 {
         // constant for index access
         let index = builder.constant(F::from_canonical_u8(i as u8));
@@ -205,6 +209,10 @@ pub fn place_ship<const L: usize>(
         // copy constrain construction of board output
         builder.connect(board_out_coordinate, board_out[i]);
     }
+    // for i in 100..128 {
+    //     // copy constrain construction of board output
+    //     builder.connect(board[i], board_out[i]);
+    // }
     // return new board state
     Ok(board_out)
 }

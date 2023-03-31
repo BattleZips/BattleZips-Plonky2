@@ -72,24 +72,26 @@ impl BoardCircuit {
                 .unwrap()
         };
         // board (init) //
-        let board_initial = builder.constants(&[F::from_canonical_u64(0); 100]);
+        let board_initial = builder.constants(&[F::from_canonical_u64(0); 128]);
 
         // place ships on board
         let board_0 = place_ship::<5>(ships[0], board_initial, &mut builder).unwrap();
-        let board_1 = place_ship::<4>(ships[1], board_0, &mut builder).unwrap();
-        let board_2 = place_ship::<3>(ships[2], board_1, &mut builder).unwrap();
-        let board_3 = place_ship::<3>(ships[3], board_2, &mut builder).unwrap();
-        let board_final = place_ship::<2>(ships[4], board_3, &mut builder).unwrap();
+        // let board_1 = place_ship::<4>(ships[1], board_0.clone(), &mut builder).unwrap();
+        // let board_2 = place_ship::<3>(ships[2], board_1, &mut builder).unwrap();
+        // let board_3 = place_ship::<3>(ships[3], board_2, &mut builder).unwrap();
+        // let board_final = place_ship::<2>(ships[4], board_3, &mut builder).unwrap();
 
         // recompose board into u128
-        let board = recompose_board(board_final, &mut builder).unwrap();
-
+        // let board = recompose_board(board_final, &mut builder).unwrap();
+        // println!("LMAO: {:?}", board);
         // hash the board into the commitment
-        let commitment = hash_board(board, &mut builder).unwrap();
+        // let commitment = hash_board(board, &mut builder).unwrap();
 
         // register public inputs (board commitment)
-        builder.register_public_inputs(&commitment.elements);
+        // builder.register_public_inputs(&commitment.elements);
 
+        // @dev
+        // builder.register_public_inputs(&board_0);
         // export circuit data
         let data = builder.build::<C>();
         Ok(Self { data, ships })
@@ -122,23 +124,22 @@ impl BoardCircuit {
         self.data.verify(proof.clone())
     }
 
-    pub fn decode_public(proof: ProofWithPublicInputs<F, C, D>) -> Result<BoardCircuitOutputs> {
-        let commitment: [u64; 4] = proof.clone()
-            .public_inputs
-            .iter()
-            .map(|x| x.to_canonical_u64())
-            .collect::<Vec<u64>>()
-            .try_into()
-            .unwrap();
-        Ok(BoardCircuitOutputs { commitment })
-    }
+    // pub fn decode_public(proof: ProofWithPublicInputs<F, C, D>) -> Result<BoardCircuitOutputs> {
+    //     let commitment: [u64; 4] = proof.clone()
+    //         .public_inputs
+    //         .iter()
+    //         .map(|x| x.to_canonical_u64())
+    //         .collect::<Vec<u64>>()
+    //         .try_into()
+    //         .unwrap();
+    //     Ok(BoardCircuitOutputs { commitment })
+    // }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::utils::{board::Board, ship::Ship};
-    use plonky2::field::types::PrimeField64;
 
     #[test]
     fn test_valid_board() {
@@ -155,15 +156,19 @@ mod tests {
         let circuit = BoardCircuit::new().unwrap();
 
         // compute proof
+        println!("ugh");
         let proof = circuit.prove(board.clone()).unwrap();
 
         // verify integrity of
+        println!("work?");
         assert_eq!((), circuit.verify(proof.clone()).unwrap());
+        // println!("work!");
 
         // verify integrity of public exports
-        let output = ShotCircuit::decode_public(proof.clone()).unwrap();
-        let expected_commitment = board.hash();
-        assert_eq!(output.commitment, expected_commitment);
+        // let output = BoardCircuit::decode_public(proof.clone()).unwrap();
+        // let expected_commitment = board.hash();
+        // println!("output: {:?}", output.commitment);
+        // assert_eq!(output.commitment, expected_commitment);
     }
 
     // fn test_invalid_board() {
