@@ -160,6 +160,7 @@ mod tests {
 
     #[test]
     fn test_shot_hit() {
+
         // define inputs
         let board = Board::new(
             Ship::new(3, 4, false),

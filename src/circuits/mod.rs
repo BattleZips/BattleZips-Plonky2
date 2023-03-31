@@ -1,6 +1,6 @@
 use plonky2::plonk::config::{GenericConfig, PoseidonGoldilocksConfig};
 
-pub mod place;
+pub mod board;
 pub mod shot;
 
 pub const D: usize = 2;
