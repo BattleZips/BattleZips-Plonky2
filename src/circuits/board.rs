@@ -1,20 +1,21 @@
 use super::{C, D, F};
-use crate::gadgets::{
-    board::{decompose_board, recompose_board},
-    range::less_than_10,
+use crate::{
+    gadgets::{
+        board::{hash_board, place_ship, recompose_board},
+        shot::{check_hit, serialize_shot},
+    },
+    utils::board::Board,
 };
 use anyhow::Result;
 use plonky2::{
-    field::{extension::Extendable, goldilocks_field::GoldilocksField, types::Field},
-    hash::hash_types::RichField,
+    field::types::{Field, PrimeField64},
     iop::{
         target::{BoolTarget, Target},
         witness::{PartialWitness, WitnessWrite},
     },
     plonk::{
         circuit_builder::CircuitBuilder,
-        circuit_data::{CircuitConfig, CircuitData, VerifierCircuitTarget},
-        config::{GenericConfig, PoseidonGoldilocksConfig},
+        circuit_data::{CircuitConfig, CircuitData},
         proof::ProofWithPublicInputs,
     },
 };
@@ -32,7 +33,7 @@ pub struct BoardCircuitOutputs {
     commitment: [u64; 4],
 }
 
-pub type ShipTarget = (Target, Target, BoolTarget);
+pub type ShipTarget = (Target, Target, Target);
 
 pub struct BoardCircuit {
     data: CircuitData<F, C, D>,
@@ -56,9 +57,11 @@ impl BoardCircuit {
         // SYNTHESIS//
         // define circuit builder
         let mut builder = CircuitBuilder::<F, D>::new(config);
-        // targets //
-        let ship: [ShipTarget; 5] = {
-            (0..5).map(|_| {
+        // TARGETS //
+        // ship //
+        let ships: [ShipTarget; 5] = {
+            (0..5)
+                .map(|_| {
                     let x = builder.add_virtual_target();
                     let y = builder.add_virtual_target();
                     let z = builder.add_virtual_bool_target_safe();
@@ -68,35 +71,66 @@ impl BoardCircuit {
                 .try_into()
                 .unwrap()
         };
-        let board = builder.add_virtual_target_arr::<2>();
+        // board (init) //
+        let board_initial = builder.constants(&[F::from_canonical_u64(0); 100]);
 
-        // GADGETS //
-        // comutation synthesis
-        const L: usize = 5; // ship size of 5
-        let board_in = decompose_board(board, &mut builder).unwrap();
-        let board_out = place_ship::<L>(ship, board_in, &mut builder).unwrap();
-        builder.register_public_inputs(&board_out);
+        // place ships on board
+        let board_0 = place_ship::<5>(ships[0], board_initial, &mut builder).unwrap();
+        let board_1 = place_ship::<4>(ships[1], board_0, &mut builder).unwrap();
+        let board_2 = place_ship::<3>(ships[2], board_1, &mut builder).unwrap();
+        let board_3 = place_ship::<3>(ships[3], board_2, &mut builder).unwrap();
+        let board_final = place_ship::<2>(ships[4], board_3, &mut builder).unwrap();
 
-        // proof inputs
-        let mut pw = PartialWitness::new();
-        /// board inputs (= 0 for now)
-        pw.set_target(board[0], F::ZERO);
-        pw.set_target(board[1], F::ZERO);
-        /// ship inputs
-        pw.set_target(ship.0, F::from_noncanonical_u128(3));
-        pw.set_target(ship.1, F::from_canonical_u64(3));
-        pw.set_bool_target(ship.2, true);
+        // recompose board into u128
+        let board = recompose_board(board_final, &mut builder).unwrap();
 
-        // prove board placement
+        // hash the board into the commitment
+        let commitment = hash_board(board, &mut builder).unwrap();
+
+        // register public inputs (board commitment)
+        builder.register_public_inputs(&commitment.elements);
+
+        // export circuit data
         let data = builder.build::<C>();
-        let proof = data.prove(pw).unwrap();
+        Ok(Self { data, ships })
+    }
 
-        // verify board placement
-        let res = data.verify(proof.clone());
-        for i in 0..L {
-            let coordinate = proof.public_inputs[i].to_canonical();
-            println!("coordinate {}: {:?}", i, coordinate);
+    pub fn prove(&self, board: Board) -> Result<ProofWithPublicInputs<F, C, D>> {
+        // build ship witness
+        let ships: [(u8, u8, u8); 5] = [
+            board.carrier.canonical(),
+            board.battleship.canonical(),
+            board.cruiser.canonical(),
+            board.submarine.canonical(),
+            board.destroyer.canonical(),
+        ];
+
+        // witness ships
+        let mut pw = PartialWitness::new();
+        for i in 0..ships.len() {
+            pw.set_target(self.ships[i].0, F::from_canonical_u8(ships[i].0));
+            pw.set_target(self.ships[i].1, F::from_canonical_u8(ships[i].1));
+            pw.set_target(self.ships[i].2, F::from_canonical_u8(ships[i].2));
         }
+
+        // PROVE //
+        let proof = self.data.prove(pw).unwrap();
+        Ok(proof)
+    }
+
+    pub fn verify(&self, proof: ProofWithPublicInputs<F, C, D>) -> Result<()> {
+        self.data.verify(proof.clone())
+    }
+
+    pub fn decode_public(proof: ProofWithPublicInputs<F, C, D>) -> Result<BoardCircuitOutputs> {
+        let commitment: [u64; 4] = proof.clone()
+            .public_inputs
+            .iter()
+            .map(|x| x.to_canonical_u64())
+            .collect::<Vec<u64>>()
+            .try_into()
+            .unwrap();
+        Ok(BoardCircuitOutputs { commitment })
     }
 }
 
@@ -106,27 +140,9 @@ mod tests {
     use crate::utils::{board::Board, ship::Ship};
     use plonky2::field::types::PrimeField64;
 
-    // #[test]
-    // fn test_compute_ship_placement_target_indexes() {
-    //     let ship = [Target::new(0), Target::new(1), Target::new(2)];
-    //     let targets = compute_ship_placement_target_indexes::<3>(ship);
-    //     println!("targets = {:?}", targets);
-    // }
-
     #[test]
-    fn test_decompose_board() {
-        // config
-        let config = CircuitConfig::standard_recursion_config();
-
-        let mut builder = CircuitBuilder::<F, D>::new(config);
-
-        // targets
-        let board_t: [Target; 2] = builder.add_virtual_targets(2).try_into().unwrap();
-
-        // decompose into bits
-        let bits = decompose_board(board_t, &mut builder).unwrap();
-
-        // proof inputs
+    fn test_valid_board() {
+        // define inputs
         let board = Board::new(
             Ship::new(3, 4, false),
             Ship::new(9, 6, true),
@@ -134,69 +150,23 @@ mod tests {
             Ship::new(0, 6, false),
             Ship::new(6, 1, true),
         );
-        let board_witness = board.canonical();
-        println!("lmao");
-        Board::print_canonical(&board_witness);
-        println!("ayy");
 
-        // proof witness
-        let mut pw = PartialWitness::new();
-        pw.set_target(board_t[0], F::from_canonical_u64(board_witness[0]));
-        pw.set_target(board_t[1], F::from_canonical_u64(board_witness[1]));
+        // build circuit
+        let circuit = BoardCircuit::new().unwrap();
 
-        //@dev
-        builder.register_public_inputs(&board_t);
+        // compute proof
+        let proof = circuit.prove(board.clone()).unwrap();
 
-        // prove board placement
-        let data = builder.build::<C>();
-        let proof = data.prove(pw).unwrap();
+        // verify integrity of
+        assert_eq!((), circuit.verify(proof.clone()).unwrap());
 
-        // verify board placement
-        let res = data.verify(proof.clone());
-        let board_out = [
-            proof.clone().public_inputs[0].to_canonical(),
-            proof.clone().public_inputs[1].to_canonical(),
-        ];
-        println!("board[0] = {:?}", board_out[0]);
-        println!("board[1] = {:?}", board_out[1]);
+        // verify integrity of public exports
+        let output = ShotCircuit::decode_public(proof.clone()).unwrap();
+        let expected_commitment = board.hash();
+        assert_eq!(output.commitment, expected_commitment);
     }
 
-    #[test]
-    fn test_ship_to_coordinates() {
-        // config
-        let config = CircuitConfig::standard_recursion_config();
-        let mut builder = CircuitBuilder::<F, D>::new(config);
+    fn test_invalid_board() {
 
-        // targets
-        let ship: (Target, Target, BoolTarget) = {
-            let x = builder.add_virtual_target();
-            let y = builder.add_virtual_target();
-            let z = builder.add_virtual_bool_target_safe();
-            (x, y, z)
-        };
-        const L: usize = 5; // ship size of 5
-        let coordinates: [Target; L] = ship_to_coordinates::<L>(ship, &mut builder).unwrap();
-        builder.register_public_inputs(&coordinates);
-
-        // proof inputs
-        let mut pw = PartialWitness::new();
-        pw.set_target(ship.0, F::from_canonical_u64(0));
-        pw.set_target(ship.1, F::from_canonical_u64(0));
-        pw.set_bool_target(ship.2, true);
-
-        // prove board placement
-        let data = builder.build::<C>();
-        let proof = data.prove(pw).unwrap();
-        println!("coordinates: {:?}", coordinates);
-
-        // verify board placement
-        let _ = data.verify(proof.clone());
-        for i in 0..L {
-            let coordinate = proof.public_inputs[i].to_canonical();
-            println!("coordinate {}: {:?}", i, coordinate);
-        }
     }
-
-    #[test]
-    pub fn test_place_ship() {}
 }

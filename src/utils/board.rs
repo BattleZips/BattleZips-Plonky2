@@ -38,7 +38,7 @@ impl Board {
      * @param ship - ship to add to the board
      * @param board - board to add the ship to as a mutable reference
      */
-    fn add_ship<const L: usize>(ship: &Ship<L>, board: &mut [bool; 100]) {
+    pub fn add_ship<const L: usize>(ship: &Ship<L>, board: &mut [bool; 100]) {
         for coordinate in ship.coordinates() {
             board[coordinate as usize] = true;
         }
