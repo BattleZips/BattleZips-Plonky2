@@ -20,16 +20,24 @@ use plonky2::{
     },
 };
 
+use plonky2_ecdsa::curve::{ecdsa::ECDSAPublicKey, secp256k1::Secp256K1};
+
+type Curve = Secp256K1;
+
 pub struct ShotCircuitOutputs {
-    pub shot: u64,
-    pub hit: u64,
     pub commitment: [u64; 4],
+    pub hit: u64,
+    // pub pubkey: [u64; 4],
+    pub shot: u64,
+    // pub signature: [u64; 8],
 }
 
 pub struct ShotCircuit {
     pub data: CircuitData<F, C, D>,
     pub board_t: [Target; 2],
     pub shot_t: [Target; 2],
+    pub pubkey_t: [Target; 4],
+    pub signature_t: [Target; 8],
 }
 
 impl ShotCircuit {
@@ -51,7 +59,9 @@ impl ShotCircuit {
         let mut builder = CircuitBuilder::<F, D>::new(config);
         // input targets
         let board_t: [Target; 2] = builder.add_virtual_targets(2).try_into().unwrap();
+        let pubkey_t: [Target; 4] = builder.add_virtual_targets(4).try_into().unwrap();
         let shot_t: [Target; 2] = builder.add_virtual_targets(2).try_into().unwrap();
+        let signature_t: [Target; 8] = builder.add_virtual_targets(8).try_into().unwrap();
         // serialize shot coordinate
         let serialized_t = serialize_shot(shot_t[0], shot_t[1], &mut builder).unwrap();
         // export serialized shot value
@@ -63,14 +73,16 @@ impl ShotCircuit {
         // compute public hash of board
         let board_hash_t = hash_board(board_t, &mut builder).unwrap();
         // export binding commitment to board publicly
-        // @dev todo: making commitment blinding as well
+        // @dev todo: check signature on board hash
         builder.register_public_inputs(&board_hash_t.elements);
         // return circuit data
         let data = builder.build::<C>();
         Ok(Self {
             data,
             board_t,
+            pubkey_t,
             shot_t,
+            signature_t,
         })
     }
 
@@ -84,9 +96,15 @@ impl ShotCircuit {
      *   - public_outputs[0] = hit/ miss boolean
      *   - public_outputs[1..5] = public commitment to private board state checked
      */
-    pub fn prove(&self, board: Board, shot: [u64; 2]) -> Result<ProofWithPublicInputs<F, C, D>> {
+    pub fn prove(
+        &self,
+        board: Board,
+        // pubkey: ECDSAPublicKey<Curve>,
+        shot: [u64; 2],
+    ) -> Result<ProofWithPublicInputs<F, C, D>> {
         // marshall board into canonical form
         let board_canonical = board.canonical();
+        // let pubkey_canonical =
 
         // witness inputs
         let mut pw = PartialWitness::new();
