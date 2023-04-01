@@ -18,7 +18,6 @@ use {
 };
 
 // BattleZips Channel Open: Recursive (non zk) proof of two valid board configurations - used to copy constrain pubkeys and board commitments
-// @todo: make channel open circuit an action by host player who commits to a first shot
 
 /**
  * Construct a partial witness for the channel open circuit
@@ -124,13 +123,24 @@ pub fn prove_channel_open(
     // constrain the opening shot from the host
     let serialized_t = serialize_shot(shot_t[0], shot_t[1], &mut builder).unwrap();
 
+    // constant game state targets on channel open
+    let host_damage_t = builder.constant(F::ZERO);
+    let guest_damage_t = builder.constant(F::ZERO);
+    let turn_t = builder.constant_bool(true);
+
     // export board commitments publicly
     //  - [0..4] = host commitment
     //  - [4..8] = guest commitment
-    //  - [8] = serialized opening shot coordinate
+    //  - [8] = host damage (constant 0 from channel open)
+    //  - [9] = guest damage (constant 0 from channel open)
+    //  - [10] = turn boolean (0 = host, 1 = guest; constant 1 from channel open)
+    //  - [11] = serialized opening shot coordinate
     // @todo: add pubkeys
     builder.register_public_inputs(&host_pt.public_inputs);
     builder.register_public_inputs(&guest_pt.public_inputs);
+    builder.register_public_input(host_damage_t);
+    builder.register_public_input(guest_damage_t);
+    builder.register_public_input(turn_t.target);
     builder.register_public_input(serialized_t);
 
     // construct circuit data
@@ -209,6 +219,7 @@ mod tests {
             Ship::new(0, 6, false),
             Ship::new(6, 1, true),
         );
+        
         // guest board (inner)
         let guest_board = Board::new(
             Ship::new(3, 3, true),
