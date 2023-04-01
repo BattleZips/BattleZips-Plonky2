@@ -1,9 +1,13 @@
-use crate::circuits::F;
-use crate::utils::ship::Ship;
-use plonky2::{
-    field::types::{Field, PrimeField64},
-    hash::poseidon::PoseidonHash,
-    plonk::config::Hasher,
+use {
+    crate::{
+        circuits::F,
+        utils::ship::Ship
+    },
+    plonky2::{
+        field::types::{Field, PrimeField64},
+        hash::poseidon::PoseidonHash,
+        plonk::config::Hasher,
+    }
 };
 
 #[derive(Debug, Clone)]

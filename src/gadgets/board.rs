@@ -1,11 +1,13 @@
-use super::range::less_than_10;
-use crate::circuits::{D, F};
-use anyhow::Result;
-use plonky2::{
-    field::types::Field,
-    hash::{hash_types::HashOutTarget, poseidon::PoseidonHash},
-    iop::target::{BoolTarget, Target},
-    plonk::circuit_builder::CircuitBuilder,
+use {
+    super::range::less_than_10,
+    crate::circuits::{D, F},
+    plonky2::{
+        field::types::Field,
+        hash::{hash_types::HashOutTarget, poseidon::PoseidonHash},
+        iop::target::{BoolTarget, Target},
+        plonk::circuit_builder::CircuitBuilder,
+    },
+    anyhow::Result
 };
 
 /**
@@ -155,10 +157,6 @@ pub fn interpolate_bitflip_bool<const L: usize>(
     let zero_t = builder.constant(F::ZERO);
     Ok(builder.is_equal(exp_t, zero_t))
 }
-
-// pub fn interpolate_placement_expression(
-//     ships: [(Target, Target, BoolTarget); 5]
-// )
 
 /**
  * Given a ship and board, constrain the placement of the ship

@@ -1,39 +1,26 @@
-use super::{C, D, F, ProofTuple};
-use log::Level;
-
-use crate::{
-    gadgets::{
-        board::{decompose_board, hash_board, place_ship, recompose_board},
-        shot::{check_hit, serialize_shot},
+use {
+    super::{ProofTuple, C, D, F},
+    crate::{
+        gadgets::board::{decompose_board, hash_board, place_ship, recompose_board},
+        utils::board::Board,
     },
-    utils::board::Board,
+    plonky2::{
+        util::timing::TimingTree,
+        field::types::{Field, PrimeField64},
+        iop::{
+            target::{BoolTarget, Target},
+            witness::{PartialWitness, WitnessWrite},
+        },
+        plonk::{
+            circuit_builder::CircuitBuilder,
+            circuit_data::{CircuitConfig, CircuitData, VerifierCircuitTarget},
+            proof::{ProofWithPublicInputs, ProofWithPublicInputsTarget},
+            prover::prove,
+        },
+    },
+    anyhow::Result,
+    log::Level,
 };
-use anyhow::Result;
-use plonky2::util::timing::TimingTree;
-use plonky2::{
-    field::types::{Field, PrimeField64},
-    iop::{
-        target::{BoolTarget, Target},
-        witness::{PartialWitness, WitnessWrite},
-    },
-    plonk::{
-        circuit_builder::CircuitBuilder,
-        circuit_data::{CircuitConfig, CircuitData, CommonCircuitData, VerifierOnlyCircuitData, VerifierCircuitTarget},
-        proof::{Proof, ProofWithPublicInputs, ProofWithPublicInputsTarget},
-        prover::prove,
-    },
-};
-
-// use ensure to check constraints
-// pub fn place_ship() -> Result<()> {
-//     let config = CircuitConfig::standard_recursion_config();
-//     let mut builder = CircuitBuilder::<F, D>::new(config);
-
-//     let board_pre: [Target; 2] = builder.add_virtual_targets(2).try_into().unwrap();
-//     Ok(())
-// }
-
-
 
 pub struct BoardCircuitOutputs {
     commitment: [u64; 4],
@@ -48,7 +35,7 @@ pub struct BoardCircuit {
 
 pub struct ShieldedBoardTargets {
     pub proof: ProofWithPublicInputsTarget<D>,
-    pub verifier: VerifierCircuitTarget
+    pub verifier: VerifierCircuitTarget,
 }
 
 // Argument of knowledge proving board commitment is the hash of a valid board config
@@ -69,7 +56,7 @@ impl BoardCircuit {
 
     /**
      * Generate a circuit config that uses zero knowledge blinding
-     * 
+     *
      * @return - circuit config
      */
     pub fn config_outer() -> Result<CircuitConfig> {
@@ -85,7 +72,10 @@ impl BoardCircuit {
      * @param board - ship positions that dictate placement on board
      * @return - ship positions witnessed for inner proof synthesis
      */
-    pub fn partial_witness_inner(targets: [ShipTarget; 5], board: Board) -> Result<PartialWitness<F>> {
+    pub fn partial_witness_inner(
+        targets: [ShipTarget; 5],
+        board: Board,
+    ) -> Result<PartialWitness<F>> {
         // build ship witness
         let ships: [(u8, u8, bool); 5] = [
             board.carrier.canonical(),
@@ -114,10 +104,13 @@ impl BoardCircuit {
      * @param targets - the targets for the outer proof
      * @return - inner proof witnessed for outer proof synthesis
      */
-    pub fn partial_witness_outer(inner: ProofTuple<F, C, D>, targets: ShieldedBoardTargets) -> Result<PartialWitness<F>> {
+    pub fn partial_witness_outer(
+        inner: ProofTuple<F, C, D>,
+        targets: ShieldedBoardTargets,
+    ) -> Result<PartialWitness<F>> {
         // instantiate partial witness
         let mut pw = PartialWitness::new();
-        
+
         // input inner proof to partial witness
         pw.set_proof_with_pis_target(&targets.proof, &inner.0);
         pw.set_verifier_data_target(&targets.verifier, &inner.1);
@@ -213,7 +206,7 @@ impl BoardCircuit {
 
     /**
      * Shielded outer proof that obfuscates information of inner proof
-     * 
+     *
      * @param inner - the proof tuple from the execution of the inner BoardCircuit proof
      * @return - outer proof tuple of everything needed to verify the proof natively or recursively
      */
@@ -225,7 +218,10 @@ impl BoardCircuit {
         let mut builder = CircuitBuilder::<F, D>::new(config.clone());
         let pt = builder.add_virtual_proof_with_pis(&inner.2);
         let inner_data = builder.add_virtual_verifier_data(inner.2.config.fri_config.cap_height);
-        let outer_targets = ShieldedBoardTargets { proof: pt.clone(), verifier: inner_data.clone() };
+        let outer_targets = ShieldedBoardTargets {
+            proof: pt.clone(),
+            verifier: inner_data.clone(),
+        };
 
         // synthesize outer proof
         builder.verify_proof::<C>(&pt, &inner_data, &inner.2);
@@ -270,46 +266,6 @@ impl BoardCircuit {
     }
 }
 
-
- /**
-     * Generate a circuit config that will use blinding factors to achieve zero knowledge
-     *
-     * @return - circuit config
-     */
-    pub fn outer_config() -> Result<CircuitConfig> {
-        let mut config = CircuitConfig::standard_recursion_config();
-        // toggle zero knowledge computation blinding
-        config.zero_knowledge = true;
-        Ok(config)
-    }
-// pub struct ShieldedBoardCircuit {
-//     data: CircuitData<F, C, D>,
-//     ships: [ShipTarget; 5],
-// }
-
-// impl ShieldedBoardCircuit {
-//     pub fn prove(board: Board) -> Result<ProofTuple<F, C, D>> {
-//         // prove inner proof
-//         let computation = BoardCircuit::new()?;
-//         let proof = computation.prove(board.clone())?;
-
-//         // CONFIG //
-//         let mut config = CircuitConfig::standard_recursion_config();
-//         config.zero_knowledge = true;
-
-//         // SYNTHESIS //
-//         // define circuit builder
-//         let mut builder = CircuitBuilder::<F, D>::new(config);
-
-//         // verify inner proof
-//         builder.verify_proof
-//         // TARGETS //
-//         // let commitment = builder.add_virtual_target_arr::<4>();
-//         // let proof = builder.add_virtual_proof_with_pis(common_data)
-//         let proof = builder.add_virtual_proof_with_pis(common_data)
-//     }
-// }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -339,6 +295,4 @@ mod tests {
         let expected_commitment = board.hash();
         assert_eq!(commitment, expected_commitment);
     }
-
-    
 }

@@ -1,6 +1,8 @@
-use crate::circuits::{D, F};
-use anyhow::Result;
-use plonky2::{field::types::Field, iop::target::Target, plonk::circuit_builder::CircuitBuilder};
+use {
+    crate::circuits::{D, F},
+    anyhow::Result,
+    plonky2::{field::types::Field, iop::target::Target, plonk::circuit_builder::CircuitBuilder}
+};
 
 /**
  * Given an existing target value, ensure that it is less than 10

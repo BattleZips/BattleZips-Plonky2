@@ -1,20 +1,3 @@
-use anyhow::Result;
-use plonky2::{
-    field::{extension::Extendable, goldilocks_field::GoldilocksField},
-    hash::hash_types::RichField,
-    iop::{
-        witness::{PartialWitness, WitnessWrite},
-        target::{Target, BoolTarget}
-    },
-    plonk::{
-        circuit_builder::CircuitBuilder,
-        circuit_data::{CircuitConfig, VerifierCircuitData, VerifierCircuitTarget},
-        config::{GenericConfig, PoseidonGoldilocksConfig},
-        proof::ProofWithPublicInputs,
-    },
-};
-
-
 #[derive(Debug, Clone)]
 pub struct Ship<const L: usize> {
     pub x: u8,
@@ -55,16 +38,4 @@ impl<const L: usize> Ship<L> {
     pub fn canonical(&self) -> (u8, u8, bool) {
         (self.x, self.y, self.z)
     }
-
-    // /**
-    //  * Return the targets of the ship
-    //  * 
-    //  * @return array of targets representing ship x, y, z
-    //  */
-    // pub fn targets(&self) -> (builder: &Ci) {
-    //     let x = Target::new(self.x as usize);
-    //     let y = Target::new(self.y as usize);
-    //     let z = BoolTarget::new(self.z as usize);
-    //     (x, y, z)
-    // }
 }
