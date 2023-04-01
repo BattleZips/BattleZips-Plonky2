@@ -44,6 +44,7 @@ use num::bigint::BigUint;
 
 use anyhow::Result;
 use plonky2::field::{
+    extension::FieldExtension,
     secp256k1_scalar::Secp256K1Scalar,
     types::{Field, Sample},
 };
@@ -88,7 +89,7 @@ fn make_shot_proof() {
     let commitment = output.commitment;
     let secret_key = ECDSASecretKey::<Curve>(Secp256K1Scalar::rand());
     let public_key = secret_key.to_public();
-    println!("Pub key: {:?}", public_key.0.x);
+    println!("Pub key: {:?}", public_key.0.x.to_basefield_array());
     let int = biguint_from_array(commitment);
     let msg = Secp256K1Scalar::from_noncanonical_biguint(int);
     let signature = sign_message(msg, secret_key);

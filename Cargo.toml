@@ -10,6 +10,8 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 anyhow = "1.0.70"
+hex = "0.4.3"
 num = "0.4.0"
 plonky2 = "0.1.3"
 plonky2_ecdsa = "0.1.0"
+sha3 = "0.10.6"
