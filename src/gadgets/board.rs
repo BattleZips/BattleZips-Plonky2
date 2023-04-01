@@ -204,6 +204,10 @@ pub fn place_ship<const L: usize>(
         // copy constrain construction of board output
         builder.connect(board_out_coordinate, board_out[i]);
     }
+    for i in 100..128 {
+        // copy constrain construction of board output
+        builder.connect(board[i], board_out[i]);
+    }
 
     // return new board state
     Ok(board_out)

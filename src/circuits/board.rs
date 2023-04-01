@@ -76,28 +76,35 @@ impl BoardCircuit {
         // board (init) //
         // let board_serialized = builder.constants(&[F::from_canonical_u64(0); 2]);
         // let board_initial = builder.
-        let board_blank: [Target; 2] = builder.constants(&[F::from_canonical_u64(0); 2]).try_into().unwrap();
+        let board_blank: [Target; 4] = builder
+            .constants(&[F::from_canonical_u32(0); 4])
+            .try_into()
+            .unwrap();
         println!("um");
         let board_initial = decompose_board(board_blank, &mut builder).unwrap();
         println!("unwrapped!");
         // place ships on board
+        println!("a");
         let board_0 = place_ship::<5>(ships[0], board_initial, &mut builder).unwrap();
-        let board_1 = place_ship::<4>(ships[1], board_0, &mut builder).unwrap();
-        let board_2 = place_ship::<3>(ships[2], board_1, &mut builder).unwrap();
-        let board_3 = place_ship::<3>(ships[3], board_2, &mut builder).unwrap();
-        let board_final = place_ship::<2>(ships[4], board_3, &mut builder).unwrap();
+        println!("b");
+        // let board_1 = place_ship::<4>(ships[1], board_0, &mut builder).unwrap();
+        // let board_2 = place_ship::<3>(ships[2], board_1, &mut builder).unwrap();
+        // let board_3 = place_ship::<3>(ships[3], board_2, &mut builder).unwrap();
+        // let board_final = place_ship::<2>(ships[4], board_3, &mut builder).unwrap();
+        // println!("x");
 
         // recompose board into u128
-        // let board = recompose_board(board_final.clone(), &mut builder).unwrap();
+        let board = recompose_board(board_0.clone(), &mut builder).unwrap();
+
         // // println!("LMAO: {:?}", board);
         // // hash the board into the commitment
         // let commitment = hash_board(board, &mut builder).unwrap();
 
-        // // register public inputs (board commitment)
+        // // // register public inputs (board commitment)
         // builder.register_public_inputs(&commitment.elements);
 
         // @dev
-        // builder.register_public_inputs(&board_0);
+        builder.register_public_inputs(&board);
         // builder.register_public_inputs(&board_final);
         // export circuit data
         let data = builder.build::<C>();
@@ -167,9 +174,21 @@ mod tests {
         let proof = circuit.prove(board.clone()).unwrap();
 
         // verify integrity of
-        println!("work?");
-        // assert_eq!((), circuit.verify(proof.clone()).unwrap());
-        // println!("work!");
+        println!("w");
+        let output = circuit.verify(proof.clone()).unwrap();
+        println!("w");
+        println!("work? {:?}", output);
+        assert_eq!((), output);
+        let board: [u32; 4] = proof
+            .clone()
+            .public_inputs
+            .iter()
+            .map(|x| x.to_canonical_u64() as u32)
+            .collect::<Vec<u32>>()
+            .try_into()
+            .unwrap();
+        // println!("work! {:?}", board);
+        Board::print_canonical(&board)
 
         // verify integrity of public exports
         // let output = BoardCircuit::decode_public(proof.clone()).unwrap();
