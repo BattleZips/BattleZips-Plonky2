@@ -36,7 +36,7 @@
 // }
 
 use crate::{
-    circuits::shot::ShotCircuit,
+    circuits::shot2::ShotCircuit,
     utils::{board::Board, ship::Ship},
 };
 

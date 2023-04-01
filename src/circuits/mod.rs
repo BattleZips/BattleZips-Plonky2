@@ -1,13 +1,12 @@
 use plonky2::plonk::{
     config::{GenericConfig, PoseidonGoldilocksConfig},
-    circuit_data::{CommonCircuitData, VerifierOnlyCircuitData},
-    proof::ProofWithPublicInputs
+    circuit_data::{CommonCircuitData, VerifierOnlyCircuitData, VerifierCircuitTarget},
+    proof::{ProofWithPublicInputs, ProofWithPublicInputsTarget}
 };
 
 pub mod board;
 pub mod shot;
-pub mod shot2;
-pub mod recursion_ex;
+// pub mod recursion_ex;
 
 pub const D: usize = 2;
 pub type C = PoseidonGoldilocksConfig;
@@ -18,3 +17,8 @@ pub type ProofTuple<F, C, const D: usize> = (
     VerifierOnlyCircuitData<C, D>,
     CommonCircuitData<F, D>,
 );
+
+pub struct ShieldedTargets {
+    pub proof: ProofWithPublicInputsTarget<D>,
+    pub verifier: VerifierCircuitTarget,
+}

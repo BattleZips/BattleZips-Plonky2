@@ -1,5 +1,5 @@
 use {
-    super::{ProofTuple, C, D, F},
+    super::{ProofTuple, ShieldedTargets, C, D, F},
     crate::{
         gadgets::board::{decompose_board, hash_board, place_ship, recompose_board},
         utils::board::Board,
@@ -33,13 +33,9 @@ pub struct BoardCircuit {
     ships: [ShipTarget; 5],
 }
 
-pub struct ShieldedBoardTargets {
-    pub proof: ProofWithPublicInputsTarget<D>,
-    pub verifier: VerifierCircuitTarget,
-}
 
 // Argument of knowledge proving board commitment is the hash of a valid board config
-// @dev inner proof that is recursively verified by outer proof to apply shieldingw
+// @dev inner proof that is recursively verified by outer proof to apply shielding
 impl BoardCircuit {
     /**
      * Generate a circuit config capable of handling 128 bit random access gates
@@ -106,7 +102,7 @@ impl BoardCircuit {
      */
     pub fn partial_witness_outer(
         inner: ProofTuple<F, C, D>,
-        targets: ShieldedBoardTargets,
+        targets: ShieldedTargets,
     ) -> Result<PartialWitness<F>> {
         // instantiate partial witness
         let mut pw = PartialWitness::new();
@@ -121,7 +117,9 @@ impl BoardCircuit {
 
     /**
      * Layout the circuit for proving that a public board commitment is the poseidon hash of a valid board configuration
-     * @
+     * 
+     * @param config - circuit config
+     * @return - circuit data and ship targets
      */
     pub fn build(config: &CircuitConfig) -> Result<BoardCircuit> {
         // define circuit builder
@@ -218,7 +216,7 @@ impl BoardCircuit {
         let mut builder = CircuitBuilder::<F, D>::new(config.clone());
         let pt = builder.add_virtual_proof_with_pis(&inner.2);
         let inner_data = builder.add_virtual_verifier_data(inner.2.config.fri_config.cap_height);
-        let outer_targets = ShieldedBoardTargets {
+        let outer_targets = ShieldedTargets {
             proof: pt.clone(),
             verifier: inner_data.clone(),
         };
