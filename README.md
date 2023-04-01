@@ -1,8 +1,16 @@
 # BattleZips-Plonky2
-BattleZips-Plonky2 is the culmination of 18 months of R&D on the used of proof-carrying data (PCD) recursion for a novel privacy/ scalability construction. 
+BattleZips-Plonky2 is the culmination of 18 months of R&D on the used of proof-carrying data (PCD) recursion for a novel privacy/ scalability construction. ZK State Channels work cohesively with L2 solutions like roll-ups to achieve superior scaling properties. They also use recursive zero knowledge proving to entirely obscure the execution details. The final "ZK State Channel Proof" is posted onchain in a single transaction with instant finality. This proof should then be used as a generic (private) state object that informs further EVM execution.
+
 Features:
   * Must be a sequential computation at the top level (recursive state channels ("state channels of state channels") allow parallelism, but battleships is an elementary case with no subchannels)
-  * Validium-style transaction batching where
+  * Validium-style transaction batching where data is not available onchain
+  * Use ZK Circuit logic to build ordered state without the need for any sequencer or intermediate state witness
+  * Build state to pre-determined "end conditions" which must be met before a "channel close" proof can be built
+  * Notarize integrity of state execution with INSTANT FINALITY on EVM chains when posting "channel close" proof
+  * Use recursive ZK shielding on "channel close" proof to shield ALL private state, exporting only the winner and loser
+  * Use "channel close" proofs as generic state objects for further onchain (or offchain) actions (battleship ex: inform elo scores)
+
+Caveat: ZK State Channels remedy the optimistic trust assumptions of legacy state channels in all cases except liveliness failures. Further R&D is needed to design a sufficiently resilient and decentralized mechanism that minimizes reliance on a third party.
 
 ## TODO
 ### Game Proofs 
@@ -30,7 +38,7 @@ Features:
  - [ ] add utils for reading and writing proof data to buffers for storage in tests/ p2p proof exchange (required for MVP)
  - [ ] add ELO scores to chaincode to demonstrate public quantitative scores from private qualitative state to measure performance (required for MVP)
  - [ ] refactor BattleZips solidity harness from Hardhat to Foundry (optional)
-
+ - [ ] recursive shielding to hide length of state channel (optional)
 
 ## Steps
 ### Channel Open Proof
@@ -38,5 +46,4 @@ Features:
 2. guest generates a board proof
 3. host verifies integrity of both board proofs and creates channel open proof with initial game state as "public" outputs
 ### Channel State Increment Proof
-3. recursively add proofs on top of proofs where hits for each is incremented
-4. final recursive proof only generated when = 17 hits, only public output is the winner / loser
+todo
