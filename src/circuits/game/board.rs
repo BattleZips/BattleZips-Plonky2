@@ -1,5 +1,5 @@
 use {
-    super::{ProofTuple, ShieldedTargets, C, D, F},
+    super::super::{ProofTuple, ShieldedTargets, C, D, F},
     crate::{
         gadgets::board::{decompose_board, hash_board, place_ship, recompose_board},
         utils::board::Board,

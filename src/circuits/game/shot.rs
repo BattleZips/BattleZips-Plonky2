@@ -1,5 +1,5 @@
 use {
-    super::{ProofTuple, ShieldedTargets, C, D, F},
+    super::super::{ProofTuple, ShieldedTargets, C, D, F},
     crate::{
         gadgets::{
             board::hash_board,

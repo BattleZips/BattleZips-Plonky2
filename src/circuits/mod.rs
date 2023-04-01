@@ -4,8 +4,7 @@ use plonky2::plonk::{
     proof::{ProofWithPublicInputs, ProofWithPublicInputsTarget}
 };
 
-pub mod board;
-pub mod shot;
+pub mod game;
 pub mod channel;
 // pub mod recursion_ex;
 

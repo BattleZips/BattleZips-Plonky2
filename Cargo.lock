@@ -31,6 +31,7 @@ name = "battlezips_plonky2"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "jemallocator",
  "log",
  "num",
  "plonky2",
@@ -42,6 +43,12 @@ name = "byteorder"
 version = "1.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "14c189c53d098945499cdfa7ecc63567cf3886b3332b312a5b4585d8d3a6a610"
+
+[[package]]
+name = "cc"
+version = "1.0.79"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "50d30906286121d95be3d479533b458f87493b30a4b5f79a607db8f5d11aa91f"
 
 [[package]]
 name = "cfg-if"
@@ -179,6 +186,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
 dependencies = [
  "either",
+]
+
+[[package]]
+name = "jemalloc-sys"
+version = "0.5.3+5.3.0-patched"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9bd5d616ea7ed58b571b2e209a65759664d7fb021a0819d7a790afc67e47ca1"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
+name = "jemallocator"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16c2514137880c52b0b4822b563fadd38257c1f380858addb74a400889696ea6"
+dependencies = [
+ "jemalloc-sys",
+ "libc",
 ]
 
 [[package]]
