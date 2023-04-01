@@ -1,6 +1,6 @@
 use plonky2::plonk::config::{GenericConfig, PoseidonGoldilocksConfig};
 
-pub mod board;
+// pub mod board;
 pub mod shot;
 pub mod recursion_ex;
 

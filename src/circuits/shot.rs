@@ -21,14 +21,14 @@ use plonky2::{
 };
 
 pub struct ShotCircuitOutputs {
-    pub shot: u64,
-    pub hit: u64,
+    pub shot: u8,
+    pub hit: bool,
     pub commitment: [u64; 4],
 }
 
 pub struct ShotCircuit {
     pub data: CircuitData<F, C, D>,
-    pub board_t: [Target; 2],
+    pub board_t: [Target; 4],
     pub shot_t: [Target; 2],
 }
 
@@ -50,7 +50,7 @@ impl ShotCircuit {
         // define circuit builder
         let mut builder = CircuitBuilder::<F, D>::new(config);
         // input targets
-        let board_t: [Target; 2] = builder.add_virtual_targets(2).try_into().unwrap();
+        let board_t: [Target; 4] = builder.add_virtual_targets(4).try_into().unwrap();
         let shot_t: [Target; 2] = builder.add_virtual_targets(2).try_into().unwrap();
         // serialize shot coordinate
         let serialized_t = serialize_shot(shot_t[0], shot_t[1], &mut builder).unwrap();
@@ -84,16 +84,19 @@ impl ShotCircuit {
      *   - public_outputs[0] = hit/ miss boolean
      *   - public_outputs[1..5] = public commitment to private board state checked
      */
-    pub fn prove(&self, board: Board, shot: [u64; 2]) -> Result<ProofWithPublicInputs<F, C, D>> {
+    pub fn prove(&self, board: Board, shot: [u8; 2]) -> Result<ProofWithPublicInputs<F, C, D>> {
         // marshall board into canonical form
         let board_canonical = board.canonical();
 
         // witness inputs
         let mut pw = PartialWitness::new();
-        pw.set_target(self.board_t[0], F::from_canonical_u64(board_canonical[0]));
-        pw.set_target(self.board_t[1], F::from_canonical_u64(board_canonical[1]));
-        pw.set_target(self.shot_t[0], F::from_canonical_u64(shot[0]));
-        pw.set_target(self.shot_t[1], F::from_canonical_u64(shot[1]));
+        pw.set_target(self.board_t[0], F::from_canonical_u32(board_canonical[0]));
+        pw.set_target(self.board_t[1], F::from_canonical_u32(board_canonical[1]));
+        pw.set_target(self.board_t[2], F::from_canonical_u32(board_canonical[2]));
+        pw.set_target(self.board_t[3], F::from_canonical_u32(board_canonical[3]));
+
+        pw.set_target(self.shot_t[0], F::from_canonical_u8(shot[0]));
+        pw.set_target(self.shot_t[1], F::from_canonical_u8(shot[1]));
 
         // constrained computation of shot hit/miss with proof
         self.data.prove(pw)
@@ -117,8 +120,8 @@ impl ShotCircuit {
      */
     pub fn decode_public(proof: ProofWithPublicInputs<F, C, D>) -> Result<ShotCircuitOutputs> {
         let public_inputs = proof.clone().public_inputs;
-        let shot = public_inputs[0].to_canonical_u64();
-        let hit = public_inputs[1].to_canonical_u64();
+        let shot = public_inputs[0].to_canonical_u64() as u8;
+        let hit = public_inputs[1].to_canonical_u64() != 0;
         let commitment: [u64; 4] = public_inputs[2..6]
             .iter()
             .map(|x| x.to_canonical_u64())
@@ -181,8 +184,8 @@ mod tests {
 
         // verify integrity of public exports
         let output = ShotCircuit::decode_public(proof.clone()).unwrap();
-        let expected_shot = 0u64;
-        let expected_hit = 1u64;
+        let expected_shot = 0u8;
+        let expected_hit = true;
         let expected_commitment = board.hash();
         assert_eq!(output.shot, expected_shot);
         assert_eq!(output.hit, expected_hit);
@@ -212,8 +215,8 @@ mod tests {
 
         // verify integrity of public exports
         let output = ShotCircuit::decode_public(proof.clone()).unwrap();
-        let expected_shot = 10u64;
-        let expected_hit = 0u64;
+        let expected_shot = 10u8;
+        let expected_hit = false;
         let expected_commitment = board.hash();
         assert_eq!(output.shot, expected_shot);
         assert_eq!(output.hit, expected_hit);

@@ -1,15 +1,12 @@
+use super::range::less_than_10;
 use crate::circuits::{D, F};
 use anyhow::Result;
 use plonky2::{
     field::types::Field,
-    iop::target::{Target, BoolTarget},
-    hash::{
-        hash_types::HashOutTarget,
-        poseidon::PoseidonHash,
-    },
+    hash::{hash_types::HashOutTarget, poseidon::PoseidonHash},
+    iop::target::{BoolTarget, Target},
     plonk::circuit_builder::CircuitBuilder,
 };
-use super::range::less_than_10;
 
 /**
  * Decompose serialized u128 into 100 LE bits
@@ -19,17 +16,17 @@ use super::range::less_than_10;
  * @return - ordered 100 target bits representing private board state
  */
 pub fn decompose_board(
-    board: [Target; 2],
+    board: [Target; 4],
     builder: &mut CircuitBuilder<F, D>,
 ) -> Result<Vec<Target>> {
-    // define virtual
-    let bits = {
-        let front = builder.split_le_base::<2>(board[0], 64);
-        let back = builder.split_le_base::<2>(board[1], 64);
-        front.iter().chain(back.iter()).copied().collect::<Vec<_>>()
-    };
-
-    Ok(bits)
+    // split bits from 32 bit chunks
+    Ok(board
+        .iter()
+        .map(|x| builder.split_le_base::<2>(*x, 32))
+        .collect::<Vec<_>>()
+        .into_iter()
+        .flat_map(|x| x.into_iter())
+        .collect::<Vec<Target>>())
 }
 
 /**
@@ -42,35 +39,29 @@ pub fn decompose_board(
 pub fn recompose_board(
     board: Vec<Target>,
     builder: &mut CircuitBuilder<F, D>,
-) -> Result<[Target; 2]> {
+) -> Result<[Target; 4]> {
     let bool_t: Vec<BoolTarget> = board
         .iter()
         .map(|bit| BoolTarget::new_unsafe(*bit))
         .collect();
-    let composed_t: [Target; 2] = {
-
-        let front = builder.le_sum(bool_t[0..64].iter());
-        println!("front: {:?}", front);
-        let back = builder.le_sum(bool_t[64..128].iter());
-        println!("back: {:?}", back);
-
-        [front, back]
-    };
-    Ok(composed_t)
+    
+    Ok([
+        builder.le_sum(bool_t[0..32].iter()),
+        builder.le_sum(bool_t[32..64].iter()),
+        builder.le_sum(bool_t[64..96].iter()),
+        builder.le_sum(bool_t[96..128].iter()),
+    ])
 }
 
 /**
  * Given the canonical representation of board state, return the hash of the board state
  * @todo: add private salt to hash
- * 
+ *
  * @param board - u128 target representing private board state in LE
  * @param builder - circuit builder
  * @return - target of constrained computation of board hash
  */
-pub fn hash_board(
-    board: [Target; 2],
-    builder: &mut CircuitBuilder<F, D>,
-) -> Result<HashOutTarget> {
+pub fn hash_board(board: [Target; 4], builder: &mut CircuitBuilder<F, D>) -> Result<HashOutTarget> {
     let hash = builder.hash_n_to_hash_no_pad::<PoseidonHash>(board.try_into().unwrap());
     Ok(hash)
 }
@@ -165,6 +156,10 @@ pub fn interpolate_bitflip_bool<const L: usize>(
     Ok(builder.is_equal(exp_t, zero_t))
 }
 
+// pub fn interpolate_placement_expression(
+//     ships: [(Target, Target, BoolTarget); 5]
+// )
+
 /**
  * Given a ship and board, constrain the placement of the ship
  * @dev prevent overlapping ships
@@ -209,10 +204,7 @@ pub fn place_ship<const L: usize>(
         // copy constrain construction of board output
         builder.connect(board_out_coordinate, board_out[i]);
     }
-    for i in 100..128 {
-        // copy constrain construction of board output
-        builder.connect(board[i], board_out[i]);
-    }
+
     // return new board state
     Ok(board_out)
 }

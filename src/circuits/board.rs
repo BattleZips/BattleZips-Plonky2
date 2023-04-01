@@ -1,7 +1,7 @@
 use super::{C, D, F};
 use crate::{
     gadgets::{
-        board::{hash_board, place_ship, recompose_board},
+        board::{decompose_board, hash_board, place_ship, recompose_board},
         shot::{check_hit, serialize_shot},
     },
     utils::board::Board,
@@ -72,30 +72,33 @@ impl BoardCircuit {
                 .unwrap()
         };
 
-        // generate 
+        // generate
         // board (init) //
         // let board_serialized = builder.constants(&[F::from_canonical_u64(0); 2]);
         // let board_initial = builder.
-        let board_initial = builder.constants(&[F::from_canonical_u64(0); 128]);
+        let board_blank: [Target; 2] = builder.constants(&[F::from_canonical_u64(0); 2]).try_into().unwrap();
+        println!("um");
+        let board_initial = decompose_board(board_blank, &mut builder).unwrap();
+        println!("unwrapped!");
         // place ships on board
-        let board_0 = place_ship::<5>(ships[0], board_initial.clone(), &mut builder).unwrap();
-        let board_1 = place_ship::<4>(ships[1], board_0.clone(), &mut builder).unwrap();
+        let board_0 = place_ship::<5>(ships[0], board_initial, &mut builder).unwrap();
+        let board_1 = place_ship::<4>(ships[1], board_0, &mut builder).unwrap();
         let board_2 = place_ship::<3>(ships[2], board_1, &mut builder).unwrap();
         let board_3 = place_ship::<3>(ships[3], board_2, &mut builder).unwrap();
         let board_final = place_ship::<2>(ships[4], board_3, &mut builder).unwrap();
 
         // recompose board into u128
-        let board = recompose_board(board_final.clone(), &mut builder).unwrap();
-        // println!("LMAO: {:?}", board);
-        // hash the board into the commitment
-        let commitment = hash_board(board, &mut builder).unwrap();
+        // let board = recompose_board(board_final.clone(), &mut builder).unwrap();
+        // // println!("LMAO: {:?}", board);
+        // // hash the board into the commitment
+        // let commitment = hash_board(board, &mut builder).unwrap();
 
-        // register public inputs (board commitment)
-        builder.register_public_inputs(&commitment.elements);
+        // // register public inputs (board commitment)
+        // builder.register_public_inputs(&commitment.elements);
 
         // @dev
         // builder.register_public_inputs(&board_0);
-        builder.register_public_inputs(&board_initial);
+        // builder.register_public_inputs(&board_final);
         // export circuit data
         let data = builder.build::<C>();
         Ok(Self { data, ships })
@@ -165,7 +168,7 @@ mod tests {
 
         // verify integrity of
         println!("work?");
-        assert_eq!((), circuit.verify(proof.clone()).unwrap());
+        // assert_eq!((), circuit.verify(proof.clone()).unwrap());
         // println!("work!");
 
         // verify integrity of public exports

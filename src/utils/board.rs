@@ -68,16 +68,16 @@ impl Board {
      *
      * @return - 2 u64s representing the full board state
      */
-    pub fn canonical(&self) -> [u64; 2] {
+    pub fn canonical(&self) -> [u32; 4] {
         // get board as 100 LE bits
         let bits = self.bits();
-        // convert into 2 u64s
-        let mut result = [0u64; 2];
+        // convert into 4 u32s as a little-endian serialized u128
+        let mut result = [0u32; 4];
         for (index, &bit) in bits.iter().enumerate() {
             if bit {
-                let array_index = index / 64;
-                let bit_index = index % 64;
-                result[array_index] |= 1u64 << bit_index;
+                let array_index = index / 32;
+                let bit_index = index % 32;
+                result[array_index] |= 1u32 << bit_index;
             }
         }
 
@@ -90,10 +90,10 @@ impl Board {
      */
     pub fn hash(&self) -> [u64; 4] {
         // get board state as canonical serialized u128
-        let board: [F; 2] = self
+        let board: [F; 4] = self
             .canonical()
             .iter()
-            .map(|x| F::from_canonical_u64(*x))
+            .map(|x| F::from_canonical_u32(*x))
             .collect::<Vec<F>>()
             .try_into()
             .unwrap();
@@ -131,11 +131,11 @@ impl Board {
         }
     }
 
-    pub fn print_canonical(board: &[u64; 2]) {
+    pub fn print_canonical(board: &[u32; 4]) {
         // convert board into 100 LE bits
         let mut bits = [false; 100];
         for i in 0..100 {
-            bits[i] = (board[i / 64] >> (i % 64)) & 1 == 1;
+            bits[i] = (board[i / 32] >> (i % 32)) & 1 == 1;
         }
         // render board
         let mut lines = Vec::<String>::new();

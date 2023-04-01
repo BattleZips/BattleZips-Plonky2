@@ -30,7 +30,7 @@ pub fn serialize_shot(x: Target, y: Target, builder: &mut CircuitBuilder<F, D>) 
  * @param return - boolean target representing whether or not the shot coordinate is occupied
  */
 pub fn check_hit(
-    board: [Target; 2],
+    board: [Target; 4],
     shot: Target,
     builder: &mut CircuitBuilder<F, D>,
 ) -> Result<Target> {
