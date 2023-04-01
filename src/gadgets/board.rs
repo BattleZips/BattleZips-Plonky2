@@ -167,7 +167,7 @@ pub fn interpolate_bitflip_bool<const L: usize>(
  * @param builder - circuit builder
  * @return - new board state as 100 bit vector with ship coordinates bitflipped
  */
-pub fn place_ship<const L: usize>(
+pub fn place_ship<const L: usize>(  
     ship: (Target, Target, BoolTarget),
     board: Vec<Target>,
     builder: &mut CircuitBuilder<F, D>,
@@ -216,3 +216,4 @@ pub fn place_ship<const L: usize>(
     // return new board state
     Ok(board_out)
 }
+
