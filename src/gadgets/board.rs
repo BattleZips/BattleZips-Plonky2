@@ -174,6 +174,12 @@ pub fn place_ship<const L: usize>(
     board: Vec<Target>,
     builder: &mut CircuitBuilder<F, D>,
 ) -> Result<Vec<Target>> {
+    // copy constrain board
+    let board_t = builder.add_virtual_targets(128);
+    for i in 0..board_t.len() {
+        builder.connect(board[i], board_t[i]);
+    }
+
     // construct the ship placement coordinates
     // @notice: range checks placement
     let ship_coordinates = ship_to_coordinates::<L>(ship, builder)?;

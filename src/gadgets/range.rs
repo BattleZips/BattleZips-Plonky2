@@ -11,7 +11,7 @@ use plonky2::{field::types::Field, iop::target::Target, plonk::circuit_builder::
  */
 pub fn less_than_10(value: Target, builder: &mut CircuitBuilder<F, D>) -> Result<()> {
     let mut exp = builder.constant(F::ONE);
-    for i in 0..9 {
+    for i in 0..10 {
         // copy value being compared
         let value_t = builder.add_virtual_target();
         builder.connect(value, value_t);

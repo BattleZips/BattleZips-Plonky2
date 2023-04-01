@@ -80,21 +80,16 @@ impl BoardCircuit {
             .constants(&[F::from_canonical_u32(0); 4])
             .try_into()
             .unwrap();
-        println!("um");
         let board_initial = decompose_board(board_blank, &mut builder).unwrap();
-        println!("unwrapped!");
         // place ships on board
-        println!("a");
         let board_0 = place_ship::<5>(ships[0], board_initial, &mut builder).unwrap();
-        println!("b");
-        // let board_1 = place_ship::<4>(ships[1], board_0, &mut builder).unwrap();
-        // let board_2 = place_ship::<3>(ships[2], board_1, &mut builder).unwrap();
-        // let board_3 = place_ship::<3>(ships[3], board_2, &mut builder).unwrap();
-        // let board_final = place_ship::<2>(ships[4], board_3, &mut builder).unwrap();
-        // println!("x");
+        let board_1 = place_ship::<4>(ships[1], board_0, &mut builder).unwrap();
+        let board_2 = place_ship::<3>(ships[2], board_1, &mut builder).unwrap();
+        let board_3 = place_ship::<3>(ships[3], board_2, &mut builder).unwrap();
+        let board_5 = place_ship::<2>(ships[4], board_3, &mut builder).unwrap();
 
         // recompose board into u128
-        let board = recompose_board(board_0.clone(), &mut builder).unwrap();
+        let board_final = recompose_board(board_5.clone(), &mut builder).unwrap();
 
         // // println!("LMAO: {:?}", board);
         // // hash the board into the commitment
@@ -104,7 +99,7 @@ impl BoardCircuit {
         // builder.register_public_inputs(&commitment.elements);
 
         // @dev
-        builder.register_public_inputs(&board);
+        builder.register_public_inputs(&board_final);
         // builder.register_public_inputs(&board_final);
         // export circuit data
         let data = builder.build::<C>();
