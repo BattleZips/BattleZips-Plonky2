@@ -6,6 +6,7 @@ use plonky2::plonk::{
 
 pub mod board;
 pub mod shot;
+pub mod channel;
 // pub mod recursion_ex;
 
 pub const D: usize = 2;
