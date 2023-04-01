@@ -18,7 +18,7 @@ pub type ProofTuple<F, C, const D: usize> = (
     CommonCircuitData<F, D>,
 );
 
-pub struct ShieldedTargets {
+pub struct RecursiveTargets {
     pub proof: ProofWithPublicInputsTarget<D>,
     pub verifier: VerifierCircuitTarget,
 }

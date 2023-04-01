@@ -1,7 +1,7 @@
 use {
     super::{
         super::{ProofTuple, ShieldedTargets, C, D, F},
-        GameTargets
+        {GameState, GameTargets},
     },
     crate::gadgets::shot::serialize_shot,
     anyhow::Result,
@@ -22,23 +22,111 @@ use {
 
 // BattleZips Channel Increment: Recursive (non zk) proof applying hit to game state
 
-pub struct GameTargets {
-    // @dev underconstrained without ecc keypairs
-    pub host: [Target; 4], // host commitment
-    pub guest: [Target; 4], // guest commitment
-    pub host_damage: Target, // track hits on host board
-    pub guest_damage: Target, // track hits on gues board
-    pub host_turn: BoolTarget, // define the turn order
-    pub shot: [Target; 2], // current shot coordinates
+/**
+ * Decode public inputs of a state increment proof
+ * @notice - also the channel open proof
+ *
+ * @param proof - proof from previous state increment containing serialized public inputs to marshall into GameState object
+ * @return - GameState object that formats the previous state logically
+ */
+pub fn decode_public(proof: ProofWithPublicInputs<F, C, D>) -> Result<GameState> {
+    // decode host board commitment
+    let host = proof.public_inputs.clone()[0..4]
+        .iter()
+        .map(|x| x.to_canonical_u64())
+        .collect::<Vec<u64>>()
+        .try_into()
+        .unwrap();
+
+    // decode guest board commitment
+    let guest = proof.public_inputs.clone()[4..8]
+        .iter()
+        .map(|x| x.to_canonical_u64())
+        .collect::<Vec<u64>>()
+        .try_into()
+        .unwrap();
+
+    // decode # of htis made on host's board
+    let host_damage = proof.public_inputs.clone()[8].to_canonical_u64() as u8;
+
+    // decode # of hits made on guest's board
+    let guest_damage = proof.public_inputs.clone()[9].to_canonical_u64() as u8;
+
+    // decode turn boolean specifying whether it is the host's turn or the guest's turn
+    let turn = proof.public_inputs.clone()[10].to_canonical_u64() != 0;
+
+    // decode the serialized shot coordinate
+    let shot = proof.public_inputs.clone()[11].to_canonical_u64() as u8;
+
+    // return the state marshalled into a logical option
+    Ok(GameState {
+        host,
+        guest,
+        host_damage,
+        guest_damage,
+        turn,
+        shot,
+    })
+}
+
+/**
+ * Witness the current state of the game and the next proof to be made
+ *
+ * @param prev_state - state of game before incrmeemnting
+ * @param game_state_t - targets for inputted previous state for state increment
+ * @param next_shot - the shot that the following state increment must evaluate for hit/ miss
+ * @param next_shot_t - the targets for the following shot
+ * @return - partial witness containing the values for constructing a state increment proof based on previous state
+ */
+pub fn partial_witness(
+    prev_state: ProofTuple<F, C, D>,
+    game_state_t: GameTargets,
+    next_shot: [u8; 2],
+    next_shot_t: [Target; 2],
+) -> Result<PartialWitness<F>> {
+    // construct partial witness
+    let mut pw = PartialWitness::new();
+
+    // extract the state from the previous state increment proof
+    let state = decode_public(prev_state.0)?;
+
+    // witness previous state proof (either channel open proof or channel state increment proof)
+    pw.set_proof_with_pis_target(&game_state_t.prev_proof.proof, &prev_state.0);
+    pw.set_verifier_data_target(&game_state_t.prev_proof.verifier, &prev_state.1);
+
+    // witness host board commitment
+    pw.set_target(game_state_t.host[0], F::from_canonical_u64(state.host[0]));
+    pw.set_target(game_state_t.host[1], F::from_canonical_u64(state.host[1]));
+    pw.set_target(game_state_t.host[2], F::from_canonical_u64(state.host[2]));
+    pw.set_target(game_state_t.host[3], F::from_canonical_u64(state.host[3]));
+
+    // witness guest board commitment
+    pw.set_target(game_state_t.guest[0], F::from_canonical_u64(state.guest[0]));
+    pw.set_target(game_state_t.guest[1], F::from_canonical_u64(state.guest[1]));
+    pw.set_target(game_state_t.guest[2], F::from_canonical_u64(state.guest[2]));
+    pw.set_target(game_state_t.guest[3], F::from_canonical_u64(state.guest[3]));
+
+    // witness host damage
+    pw.set_target(game_state_t.host_damage, F::from_canonical_u8(state.host_damage));
+
+    // witness guest damage
+    pw.set_target(game_state_t.guest_damage, F::from_canonical_u8(state.guest_damage));
+    
+    // witness turn
+    pw.set_bool_target(game_state_t.turn, state.turn);
+
+    // witness shot
+    pw.set_target(game_state_t.shot, F::from_canonical_u8(state.shot));
+
+    // return witnessed inputs
+    Ok(pw)
 }
 
 /**
  * Given the current state of the game, increment the game by proving a hit/ miss and asserting a shot for next player
  * @dev todo: add ecc keypair to constrain host_turn order
  */
-pub fn prove_channel_increment(state_t: GameTargets) -> Result<ProofWithPublicInputs<F, C, D>> {
-    
-}
+pub fn prove_channel_increment(state_t: GameTargets) -> Result<ProofWithPublicInputs<F, C, D>> {}
 
 /**
  * Construct a partial witness for the channel open circuit
@@ -51,7 +139,7 @@ pub fn prove_channel_increment(state_t: GameTargets) -> Result<ProofWithPublicIn
  * @param shot_t - targets for opening shot
  * @return partial witness for battleship channel open circuit
  */
-pub fn partial_witness(
+pub fn parstial_witness(
     host_p: ProofTuple<F, C, D>,
     guest_p: ProofTuple<F, C, D>,
     shot: [u8; 2],
@@ -169,7 +257,7 @@ pub fn prove_channel_open(
     Ok((proof, data.verifier_only, data.common))
 }
 
-pub fn 
+// pub fn
 
 #[cfg(test)]
 mod tests {

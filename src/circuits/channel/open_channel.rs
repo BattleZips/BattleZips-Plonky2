@@ -1,5 +1,5 @@
 use {
-    super::super::{ProofTuple, ShieldedTargets, C, D, F},
+    super::super::{ProofTuple, RecursiveTargets, C, D, F},
     crate::gadgets::shot::serialize_shot,
     anyhow::Result,
     log::Level,
@@ -31,8 +31,8 @@ use {
  * @return partial witness for battleship channel open circuit
  */
 pub fn partial_witness(
-    host_t: ShieldedTargets,
-    guest_t: ShieldedTargets,
+    host_t: RecursiveTargets,
+    guest_t: RecursiveTargets,
     host_p: ProofTuple<F, C, D>,
     guest_p: ProofTuple<F, C, D>,
     shot: [u8; 2],
@@ -99,7 +99,7 @@ pub fn prove_channel_open(
     // host board proof targets
     let host_pt = builder.add_virtual_proof_with_pis(&host.2);
     let host_data = builder.add_virtual_verifier_data(host.2.config.fri_config.cap_height);
-    let host_t = ShieldedTargets {
+    let host_t = RecursiveTargets {
         proof: host_pt.clone(),
         verifier: host_data.clone(),
     };
@@ -107,7 +107,7 @@ pub fn prove_channel_open(
     // guest board proof targets
     let guest_pt = builder.add_virtual_proof_with_pis(&guest.2);
     let guest_data = builder.add_virtual_verifier_data(guest.2.config.fri_config.cap_height);
-    let guest_t = ShieldedTargets {
+    let guest_t = RecursiveTargets {
         proof: guest_pt.clone(),
         verifier: guest_data.clone(),
     };

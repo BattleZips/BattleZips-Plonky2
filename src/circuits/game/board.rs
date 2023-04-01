@@ -1,5 +1,5 @@
 use {
-    super::super::{ProofTuple, ShieldedTargets, C, D, F},
+    super::super::{ProofTuple, RecursiveTargets, C, D, F},
     crate::{
         gadgets::board::{decompose_board, hash_board, place_ship, recompose_board},
         utils::board::Board,
@@ -102,7 +102,7 @@ impl BoardCircuit {
      */
     pub fn partial_witness_outer(
         inner: ProofTuple<F, C, D>,
-        targets: ShieldedTargets,
+        targets: RecursiveTargets,
     ) -> Result<PartialWitness<F>> {
         // instantiate partial witness
         let mut pw = PartialWitness::new();
@@ -203,7 +203,7 @@ impl BoardCircuit {
     }
 
     /**
-     * Shielded outer proof that obfuscates information of inner proof
+     * Recursive outer proof that obfuscates information of inner proof
      *
      * @param inner - the proof tuple from the execution of the inner BoardCircuit proof
      * @return - outer proof tuple of everything needed to verify the proof natively or recursively
@@ -216,7 +216,7 @@ impl BoardCircuit {
         let mut builder = CircuitBuilder::<F, D>::new(config.clone());
         let pt = builder.add_virtual_proof_with_pis(&inner.2);
         let inner_data = builder.add_virtual_verifier_data(inner.2.config.fri_config.cap_height);
-        let outer_targets = ShieldedTargets {
+        let outer_targets = RecursiveTargets {
             proof: pt.clone(),
             verifier: inner_data.clone(),
         };
