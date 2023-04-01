@@ -46,9 +46,9 @@ pub fn partial_witness(
     pw.set_proof_with_pis_target(&host_t.proof, &host_p.0);
     pw.set_verifier_data_target(&host_t.verifier, &host_p.1);
 
-    // witness gues proof
-    pw.set_proof_with_pis_target(&host_t.proof, &host_p.0);
-    pw.set_verifier_data_target(&host_t.verifier, &host_p.1);
+    // witness guest proof
+    pw.set_proof_with_pis_target(&guest_t.proof, &guest_p.0);
+    pw.set_verifier_data_target(&guest_t.verifier, &guest_p.1);
 
     // return witnessed inputs
     Ok(pw)
@@ -74,7 +74,7 @@ pub fn decode_public(proof: ProofWithPublicInputs<F, C, D>) -> Result<([u64; 4],
     Ok((host, guest))
 }
 
-pub fn prove_channel_open(
+pub fn prove_channel_open(  
     host: ProofTuple<F, C, D>,
     guest: ProofTuple<F, C, D>,
 ) -> Result<ProofTuple<F, C, D>> {
@@ -83,12 +83,14 @@ pub fn prove_channel_open(
 
     // define targets
     let mut builder = CircuitBuilder::<F, D>::new(config.clone());
+
     let host_pt = builder.add_virtual_proof_with_pis(&host.2);
     let host_data = builder.add_virtual_verifier_data(host.2.config.fri_config.cap_height);
     let host_t = ShieldedTargets {
         proof: host_pt.clone(),
         verifier: host_data.clone(),
     };
+    
     let guest_pt = builder.add_virtual_proof_with_pis(&guest.2);
     let guest_data = builder.add_virtual_verifier_data(guest.2.config.fri_config.cap_height);
     let guest_t = ShieldedTargets {
@@ -114,13 +116,12 @@ pub fn prove_channel_open(
 
     // prove outer proof provides valid shielding of a board validity circuit
     let mut timing = TimingTree::new("prove", Level::Debug);
-    println!("a");
     let proof = prove(&data.prover_only, &data.common, pw, &mut timing)?;
     timing.print();
-    println!("b");
+
     // verify the outer proof's integrity
     data.verify(proof.clone())?;
-    println!("c");
+
     // return outer proof artifacts
     Ok((proof, data.verifier_only, data.common))
 }
