@@ -91,16 +91,12 @@ impl BoardCircuit {
         // recompose board into u128
         let board_final = recompose_board(board_5.clone(), &mut builder).unwrap();
 
-        // // println!("LMAO: {:?}", board);
         // // hash the board into the commitment
-        // let commitment = hash_board(board, &mut builder).unwrap();
+        let commitment = hash_board(board_final, &mut builder).unwrap();
 
-        // // // register public inputs (board commitment)
-        // builder.register_public_inputs(&commitment.elements);
+        // register public inputs (board commitment)
+        builder.register_public_inputs(&commitment.elements);
 
-        // @dev
-        builder.register_public_inputs(&board_final);
-        // builder.register_public_inputs(&board_final);
         // export circuit data
         let data = builder.build::<C>();
         Ok(Self { data, ships })
@@ -133,16 +129,16 @@ impl BoardCircuit {
         self.data.verify(proof.clone())
     }
 
-    // pub fn decode_public(proof: ProofWithPublicInputs<F, C, D>) -> Result<BoardCircuitOutputs> {
-    //     let commitment: [u64; 4] = proof.clone()
-    //         .public_inputs
-    //         .iter()
-    //         .map(|x| x.to_canonical_u64())
-    //         .collect::<Vec<u64>>()
-    //         .try_into()
-    //         .unwrap();
-    //     Ok(BoardCircuitOutputs { commitment })
-    // }
+    pub fn decode_public(proof: ProofWithPublicInputs<F, C, D>) -> Result<BoardCircuitOutputs> {
+        let commitment: [u64; 4] = proof.clone()
+            .public_inputs
+            .iter()
+            .map(|x| x.to_canonical_u64())
+            .collect::<Vec<u64>>()
+            .try_into()
+            .unwrap();
+        Ok(BoardCircuitOutputs { commitment })
+    }
 }
 
 #[cfg(test)]
@@ -165,31 +161,16 @@ mod tests {
         let circuit = BoardCircuit::new().unwrap();
 
         // compute proof
-        println!("ugh");
         let proof = circuit.prove(board.clone()).unwrap();
 
-        // verify integrity of
-        println!("w");
-        let output = circuit.verify(proof.clone()).unwrap();
-        println!("w");
-        println!("work? {:?}", output);
-        assert_eq!((), output);
-        let board: [u32; 4] = proof
-            .clone()
-            .public_inputs
-            .iter()
-            .map(|x| x.to_canonical_u64() as u32)
-            .collect::<Vec<u32>>()
-            .try_into()
-            .unwrap();
-        // println!("work! {:?}", board);
-        Board::print_canonical(&board)
+        // verify proof
+        assert_eq!((), circuit.verify(proof.clone()).unwrap());
 
         // verify integrity of public exports
-        // let output = BoardCircuit::decode_public(proof.clone()).unwrap();
-        // let expected_commitment = board.hash();
+        let output = BoardCircuit::decode_public(proof.clone()).unwrap();
+        let expected_commitment = board.hash();
         // println!("output: {:?}", output.commitment);
-        // assert_eq!(output.commitment, expected_commitment);
+        assert_eq!(output.commitment, expected_commitment);
     }
 
     // fn test_invalid_board() {
