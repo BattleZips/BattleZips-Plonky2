@@ -44,7 +44,7 @@ impl ShotCircuit {
         // set wires for random access gate
         config.num_wires = 137;
         config.num_routed_wires = 130;
-        // config.zero_knowledge = true;
+        config.zero_knowledge = true;
 
         // SYNTHESIS//
         // define circuit builder
