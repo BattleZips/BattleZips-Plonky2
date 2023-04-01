@@ -114,12 +114,13 @@ pub fn prove_channel_open(
 
     // prove outer proof provides valid shielding of a board validity circuit
     let mut timing = TimingTree::new("prove", Level::Debug);
+    println!("a");
     let proof = prove(&data.prover_only, &data.common, pw, &mut timing)?;
     timing.print();
-
+    println!("b");
     // verify the outer proof's integrity
     data.verify(proof.clone())?;
-
+    println!("c");
     // return outer proof artifacts
     Ok((proof, data.verifier_only, data.common))
 }
@@ -156,16 +157,16 @@ mod tests {
         // prove inner proofs
         let host_inner = BoardCircuit::prove_inner(host_board.clone()).unwrap();
         println!("1. Host inner proof successful");
-        // let host_p = BoardCircuit::prove_outer(host_inner).unwrap();
+        let host_p = BoardCircuit::prove_outer(host_inner).unwrap();
         println!("2. Host outer proof successful");
         let guest_inner = BoardCircuit::prove_inner(guest_board.clone()).unwrap();
         println!("3. Guest inner proof successful");
-        // let guest_p = BoardCircuit::prove_outer(guest_inner).unwrap();
+        let guest_p = BoardCircuit::prove_outer(guest_inner).unwrap();
         println!("4. Guest outer proof successful");
 
         // recursively prove the integrity of a zk state channel opening
-        // let channel_open = prove_channel_open(host_p, guest_p).unwrap();
-        let channel_open = prove_channel_open(host_inner, guest_inner).unwrap();
+        // let channel_open = prove_channel_open(host_inner, guest_inner).unwrap();
+        let channel_open = prove_channel_open(host_p, guest_p).unwrap();
         println!("channel opened!");
 
     }
