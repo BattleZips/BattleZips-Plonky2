@@ -15,8 +15,8 @@ use plonky2::{
     },
     plonk::{
         circuit_builder::CircuitBuilder,
-        circuit_data::{CircuitConfig, CircuitData},
-        proof::ProofWithPublicInputs,
+        circuit_data::{CircuitConfig, CircuitData, CommonCircuitData, VerifierOnlyCircuitData},
+        proof::{ProofWithPublicInputs, Proof},
     },
 };
 
@@ -28,6 +28,12 @@ use plonky2::{
 //     let board_pre: [Target; 2] = builder.add_virtual_targets(2).try_into().unwrap();
 //     Ok(())
 // }
+
+type ProofTuple<F, C, const D: usize> = (
+    ProofWithPublicInputs<F, C, D>,
+    VerifierOnlyCircuitData<C, D>,
+    CommonCircuitData<F, D>,
+);
 
 pub struct BoardCircuitOutputs {
     commitment: [u64; 4],
@@ -52,7 +58,7 @@ impl BoardCircuit {
         // set wires for random access gate
         config.num_wires = 137;
         config.num_routed_wires = 130;
-        // config.zero_knowledge = true;
+        config.zero_knowledge = true;
 
         // SYNTHESIS//
         // define circuit builder
@@ -130,7 +136,8 @@ impl BoardCircuit {
     }
 
     pub fn decode_public(proof: ProofWithPublicInputs<F, C, D>) -> Result<BoardCircuitOutputs> {
-        let commitment: [u64; 4] = proof.clone()
+        let commitment: [u64; 4] = proof
+            .clone()
             .public_inputs
             .iter()
             .map(|x| x.to_canonical_u64())
@@ -140,6 +147,35 @@ impl BoardCircuit {
         Ok(BoardCircuitOutputs { commitment })
     }
 }
+
+// pub struct ShieldedBoardCircuit {
+//     data: CircuitData<F, C, D>,
+//     ships: [ShipTarget; 5],
+// }
+
+// impl ShieldedBoardCircuit {
+//     pub fn prove(board: Board) -> Result<ProofTuple<F, C, D>> {
+//         // prove inner proof
+//         let computation = BoardCircuit::new()?;
+//         let proof = computation.prove(board.clone())?;
+        
+
+//         // CONFIG //
+//         let mut config = CircuitConfig::standard_recursion_config();
+//         config.zero_knowledge = true;
+
+//         // SYNTHESIS //
+//         // define circuit builder
+//         let mut builder = CircuitBuilder::<F, D>::new(config);
+
+//         // verify inner proof
+//         builder.verify_proof
+//         // TARGETS //
+//         // let commitment = builder.add_virtual_target_arr::<4>();
+//         // let proof = builder.add_virtual_proof_with_pis(common_data)
+//         let proof = builder.add_virtual_proof_with_pis(common_data)
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
