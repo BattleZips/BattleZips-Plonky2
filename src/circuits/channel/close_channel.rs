@@ -112,7 +112,7 @@ pub fn prove_close_channel(state_p: ProofTuple<F, C, D>) -> Result<ProofTuple<F,
         &state_p.2,
     );
     // multiplex damage to evaluate whether end condition is met
-    let threshold = builder.constant(F::from_canonical_u8(3));
+    let threshold = builder.constant(F::from_canonical_u8(17));
     let damage_t = builder.select(turn_t, host_damage_t, guest_damage_t);
     let end_condition = builder.is_equal(damage_t, threshold);
     let end_const = builder.constant_bool(true);
@@ -123,8 +123,8 @@ pub fn prove_close_channel(state_p: ProofTuple<F, C, D>) -> Result<ProofTuple<F,
     let loser_commit_t = builder.add_virtual_target_arr::<4>();
     for i in 0..winner_commit_t.len() {
         let winner_commit_limb =
-            builder.select(turn_t, host_commitment_t[i], guest_commitment_t[i]);
-        let loser_commit_limb = builder.select(turn_t, guest_commitment_t[i], host_commitment_t[i]);
+            builder.select(turn_t, guest_commitment_t[i], host_commitment_t[i]);
+        let loser_commit_limb = builder.select(turn_t, host_commitment_t[i], guest_commitment_t[i]);
         builder.connect(winner_commit_t[i], winner_commit_limb);
         builder.connect(loser_commit_t[i], loser_commit_limb);
     }
@@ -255,7 +255,7 @@ mod tests {
             open_channel(host_board.clone(), guest_board.clone(), HOST_HIT_COORDS[0]).unwrap();
 
         // recursively prove entire state channel
-        for i in 0..3 {
+        for i in 0..HOST_HIT_COORDS.len() - 1 {
 
             // GUEST state increment
             previous_p = increment_channel_state(
@@ -295,11 +295,7 @@ mod tests {
             .try_into()
             .unwrap();
         let expected_winner = guest_board.hash();
-        println!("expected: {:?}", expected_winner);
-        println!("winner: {:?}", winner);
         let expected_loser = host_board.hash();
-        println!("expected: {:?}", expected_loser);
-        println!("loser: {:?}", loser);
         assert_eq!(winner, expected_winner);
         assert_eq!(loser, expected_loser);
     }
