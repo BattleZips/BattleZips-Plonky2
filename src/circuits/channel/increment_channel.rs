@@ -31,8 +31,8 @@ use {
 pub struct StateIncrementCircuit {
     pub data: CircuitData<F, C, D>, // circuit data for a given state increment
     pub prev: GameTargets,          // targets for previous state increment proof
-    pub shot: RecursiveTargets,     // targets for shot proof
-    pub shot_t: [Target; 2],        // targets for shot coordinates
+    pub shot: ShotProofTargets,     // targets for shot proof
+    pub next_shot: [Target; 2],     // targets for shot coordinates
 }
 
 // Targets for recursive shot proof verification
@@ -113,10 +113,10 @@ impl StateIncrementCircuit {
         game_state_t: GameTargets,
     ) -> Result<()> {
         // extract the state from the previous state increment proof
-        let state = decode_public(prev_state.0)?;
+        let state = StateIncrementCircuit::decode_public(prev_state.0.clone())?;
 
         // witness previous state proof (either channel open proof or channel state increment proof)
-        pw.set_proof_with_pis_target(&game_state_t.prev_proof.proof, &prev_state.0);
+        pw.set_proof_with_pis_target(&game_state_t.prev_proof.proof, &prev_state.0.clone());
         pw.set_verifier_data_target(&game_state_t.prev_proof.verifier, &prev_state.1);
 
         // witness host board commitment
@@ -270,17 +270,38 @@ impl StateIncrementCircuit {
     }
 
     /**
-     * Prove the validity of a sequential state increment
+     * Increment damage counter for a player contingent on shot proof hit = true
      *
-     * @param prev - previous state increment proof
-     * @param shot - shot proof that informs the state increment
-     * @param next - next shot to be evaluated in subsequent state increment
+     * @param builder - circuit builder to construct circuit with
+     * @param prev - previous state increment proof targets (contains previous damage values)
+     * @param shot - shot proof targets (contains hit value)
+     * @return - updated damage values [host, guest]
+     */
+    pub fn apply_damage(
+        builder: &mut CircuitBuilder<F, D>,
+        prev: &GameTargets,
+        shot: &ShotProofTargets,
+    ) -> Result<[Target; 2]> {
+        // multiplex host damage value
+        let host_damage_increment = builder.add(prev.host_damage, shot.hit.target);
+        let host_damage = builder.select(prev.turn, prev.host_damage, host_damage_increment);
+        // multiplex guest damage value
+        let guest_damage_increment = builder.add(prev.guest_damage, shot.hit.target);
+        let guest_damage = builder.select(prev.turn, guest_damage_increment, prev.guest_damage);
+        // return updated damage targets
+        Ok([host_damage, guest_damage])
+    }
+
+    /**
+     * Build a circuit that proves the validity of a sequential state increment
+     *
+     * @param prev - common verifier data for previous state increment proof
+     * @param shot - common verifier data shot proof that informs the state increment
      * @return - a channel state increment circuit
      */
-    pub fn prove(
-        prev: ProofTuple<F, C, D>,
-        shot: ProofTuple<F, C, D>,
-        next: [u8; 2],
+    pub fn build(
+        prev: &CommonCircuitData<F, D>,
+        shot: &CommonCircuitData<F, D>,
     ) -> Result<StateIncrementCircuit> {
         // CONFIG //
         let config = CircuitConfig::standard_recursion_config();
@@ -288,9 +309,9 @@ impl StateIncrementCircuit {
 
         // TARGETS //
         // prev state increment proof targets
-        let prev_state_t = StateIncrementCircuit::game_state_targets(&prev.2, &mut builder)?;
+        let prev_state_t = StateIncrementCircuit::game_state_targets(prev, &mut builder)?;
         // shot proof targets
-        let shot_t = StateIncrementCircuit::shot_proof_targets(&shot.2, &mut builder)?;
+        let shot_t = StateIncrementCircuit::shot_proof_targets(shot, &mut builder)?;
         // next shot targets
         let next_shot_t = builder.add_virtual_target_arr::<2>();
 
@@ -299,287 +320,141 @@ impl StateIncrementCircuit {
         builder.verify_proof::<C>(
             &prev_state_t.prev_proof.proof,
             &prev_state_t.prev_proof.verifier,
-            &prev.2,
+            &prev,
         );
-        builder.verify_proof::<C>(&shot_t.proof.proof, &shot_t.proof.verifier, &shot.2);
+        builder.verify_proof::<C>(&shot_t.proof.proof, &shot_t.proof.verifier, &shot);
         // copy constrain values checked in shot proof against values to be checked according to previous state increment
         StateIncrementCircuit::constrain_commitment(&mut builder, &&prev_state_t, &shot_t)?;
         StateIncrementCircuit::constrain_shot(&mut builder, &&prev_state_t, &shot_t)?;
+        // multiplex and increment damage to host or guest based on calculated shot proof hit/miss bool
+        let damage_t = StateIncrementCircuit::apply_damage(&mut builder, &prev_state_t, &shot_t)?;
         // serialize next shot to be verified in subsequent state increment proof
         let next_shot_serialized_t = serialize_shot(next_shot_t[0], next_shot_t[1], &mut builder)?;
         // flip turn (0 = 0 -> 1; 1 = 0 -> 0)
         let zero = builder.constant(F::ZERO);
-        let next_turn_t = builder.is_equal(targets.turn.target, zero);
+        let next_turn_t = builder.is_equal(prev_state_t.turn.target, zero);
 
         // PUBLIC INPUTS //
+        // pass through host board commitment ([0..4])
+        builder.register_public_inputs(&prev_state_t.host);
+        // pass through guest board commitment ([4..8])
+        builder.register_public_inputs(&prev_state_t.guest);
+        // register updated host damage ([8])
+        builder.register_public_input(damage_t[0]);
+        // register updated guest damage ([9])
+        builder.register_public_input(damage_t[1]);
+        // register turn bool (10)
+        builder.register_public_input(next_turn_t.target);
+        // register next shot (11)
+        builder.register_public_input(next_shot_serialized_t);
+
+        // return circuit data and ship targets
+        Ok(Self {
+            data: builder.build::<C>(),
+            prev: prev_state_t,
+            shot: shot_t,
+            next_shot: next_shot_t,
+        })
+    }
+
+    /**
+     * Prove the increment of state in a channel
+     *
+     * @param prev_p - previous state increment proof
+     * @param shot_p - shot proof informing this state increment
+     * @param shot - shot coordinate to be verified in next state increment
+     * @return - proof of proper state increment
+     */
+    pub fn prove(
+        prev_p: ProofTuple<F, C, D>,
+        shot_p: ProofTuple<F, C, D>,
+        shot: [u8; 2],
+    ) -> Result<ProofTuple<F, C, D>> {
+        // CIRCUIT //
+        // build the circuit that constrains the state increment
+        let circuit = StateIncrementCircuit::build(&prev_p.2, &shot_p.2)?;
+
+        // WITNESS //
+        let mut pw = PartialWitness::new();
+        // witness the previous state increment proof
+        StateIncrementCircuit::witness_prev_state(&mut pw, prev_p, circuit.prev);
+        // witness inner shot proof
+        StateIncrementCircuit::witness_shot(
+            &mut pw,
+            shot_p,
+            circuit.shot.proof,
+            circuit.shot.commitment,
+            circuit.shot.hit,
+            circuit.shot.shot
+        );
+        // witness next shot
+        StateIncrementCircuit::witness_next_shot(&mut pw, shot, circuit.next_shot);
+
+        // PROVE //
+        // generate proof
+        let mut timing = TimingTree::new("prove", Level::Debug);
+        let proof = prove(
+            &circuit.data.prover_only,
+            &circuit.data.common,
+            pw,
+            &mut timing,
+        )?;
+        timing.print();
+
+        // verify the proof was generated correctly
+        circuit.data.verify(proof.clone())?;
+
+        // PROVE //
+        Ok((proof, circuit.data.verifier_only, circuit.data.common))
+    }
+
+    /**
+     * Decode public inputs of a state increment proof
+     * @notice - also the channel open proof
+     *
+     * @param proof - proof from previous state increment containing serialized public inputs to marshall into GameState object
+     * @return - GameState object that formats the previous state logically
+     */
+    pub fn decode_public(proof: ProofWithPublicInputs<F, C, D>) -> Result<GameState> {
+        // decode host board commitment
+        let host = proof.public_inputs.clone()[0..4]
+            .iter()
+            .map(|x| x.to_canonical_u64())
+            .collect::<Vec<u64>>()
+            .try_into()
+            .unwrap();
+
+        // decode guest board commitment
+        let guest = proof.public_inputs.clone()[4..8]
+            .iter()
+            .map(|x| x.to_canonical_u64())
+            .collect::<Vec<u64>>()
+            .try_into()
+            .unwrap();
+
+        // decode # of htis made on host's board
+        let host_damage = proof.public_inputs.clone()[8].to_canonical_u64() as u8;
+
+        // decode # of hits made on guest's board
+        let guest_damage = proof.public_inputs.clone()[9].to_canonical_u64() as u8;
+
+        // decode turn boolean specifying whether it is the host's turn or the guest's turn
+        let turn = proof.public_inputs.clone()[10].to_canonical_u64() != 0;
+
+        // decode the serialized shot coordinate
+        let shot = proof.public_inputs.clone()[11].to_canonical_u64() as u8;
+
+        // return the state marshalled into a logical option
+        Ok(GameState {
+            host,
+            guest,
+            host_damage,
+            guest_damage,
+            turn,
+            shot,
+        })
     }
 }
-
-/**
- * Decode public inputs of a state increment proof
- * @notice - also the channel open proof
- *
- * @param proof - proof from previous state increment containing serialized public inputs to marshall into GameState object
- * @return - GameState object that formats the previous state logically
- */
-pub fn decode_public(proof: ProofWithPublicInputs<F, C, D>) -> Result<GameState> {
-    // decode host board commitment
-    let host = proof.public_inputs.clone()[0..4]
-        .iter()
-        .map(|x| x.to_canonical_u64())
-        .collect::<Vec<u64>>()
-        .try_into()
-        .unwrap();
-
-    // decode guest board commitment
-    let guest = proof.public_inputs.clone()[4..8]
-        .iter()
-        .map(|x| x.to_canonical_u64())
-        .collect::<Vec<u64>>()
-        .try_into()
-        .unwrap();
-
-    // decode # of htis made on host's board
-    let host_damage = proof.public_inputs.clone()[8].to_canonical_u64() as u8;
-
-    // decode # of hits made on guest's board
-    let guest_damage = proof.public_inputs.clone()[9].to_canonical_u64() as u8;
-
-    // decode turn boolean specifying whether it is the host's turn or the guest's turn
-    let turn = proof.public_inputs.clone()[10].to_canonical_u64() != 0;
-
-    // decode the serialized shot coordinate
-    let shot = proof.public_inputs.clone()[11].to_canonical_u64() as u8;
-
-    // return the state marshalled into a logical option
-    Ok(GameState {
-        host,
-        guest,
-        host_damage,
-        guest_damage,
-        turn,
-        shot,
-    })
-}
-
-/**
- * Given the current state of the game, increment the game by proving a hit/ miss and asserting a shot for next player
- * @dev todo: add ecc keypair to constrain host_turn order
- */
-pub fn prove_channel_increment(
-    prev_p: ProofTuple<F, C, D>,
-    shot_p: ProofTuple<F, C, D>,
-    shot: [u8; 2],
-) -> Result<ProofTuple<F, C, D>> {
-    // instantiate config for channel open circuit
-    let config = CircuitConfig::standard_recursion_config();
-    let mut builder = CircuitBuilder::<F, D>::new(config.clone());
-
-    // TARGETS //
-
-    // channel targets
-    // let targets = ;
-
-    // inner shot proof targets
-    let shot_pt = RecursiveTargets {
-        proof: builder.add_virtual_proof_with_pis(&shot_p.2),
-        verifier: builder.add_virtual_verifier_data(shot_p.2.config.fri_config.cap_height),
-    };
-
-    // shot proof output targets
-    let commitment_t = builder.add_virtual_target_arr::<4>();
-    let hit_t = builder.add_virtual_bool_target_safe();
-    let shot_t = builder.add_virtual_target();
-
-    // next shot targets
-    let next_shot_t = builder.add_virtual_target_arr::<2>();
-
-    // SYNTHESIZE //
-    // verify inner proofs
-    builder.verify_proof::<C>(
-        &targets.prev_proof.proof,
-        &targets.prev_proof.verifier,
-        &prev_p.2,
-    );
-    builder.verify_proof::<C>(&shot_pt.proof, &shot_pt.verifier, &shot_p.2);
-
-    // mutiplex damage equation
-    // if turn = 1, ignore increment as hits apply to guest, else increment according to hit value
-    let host_damage_increment = builder.add(targets.host_damage, hit_t.target);
-    let multiplexed_host_damage =
-        builder.select(targets.turn, targets.host_damage, host_damage_increment);
-
-    // if turn = 0, ignore increment as hits apply to host, else increment according to hit value
-    let guest_damage_increment = builder.add(targets.host_damage, hit_t.target);
-    let multiplexed_guest_damage =
-        builder.select(targets.turn, guest_damage_increment, targets.guest_damage);
-
-    // serialize next shot
-    let serialized_t = serialize_shot(next_shot_t[0], next_shot_t[1], &mut builder).unwrap();
-
-    // flip turn
-    let zero = builder.constant(F::ZERO);
-    // 0 = 0 -> 1; 1 = 0 -> 0
-    let next_turn_t = builder.is_equal(targets.turn.target, zero);
-
-    // OUTPUTS //
-    // pipe through the board commitments
-    builder.register_public_inputs(&targets.host);
-    builder.register_public_inputs(&targets.guest);
-
-    // output mutiplexed damage values
-    builder.register_public_input(multiplexed_host_damage);
-    builder.register_public_input(multiplexed_guest_damage);
-
-    // output flipped turn
-    builder.register_public_input(targets.turn.target);
-
-    // output the shot that the next state increment must verify
-    builder.register_public_input(serialized_t);
-
-    // WITNESS //
-    let mut pw = PartialWitness::new();
-    // witness shot proof
-    witness_shot(&mut pw, shot_p, shot_pt, commitment_t, hit_t, shot_t);
-
-    // witness previous state proof
-    witness_prev_state(&mut pw, prev_p, targets);
-
-    // witness next shot
-    witness_next_shot(&mut pw, shot, next_shot_t);
-    // PROVE //
-}
-
-/**
- * Construct a partial witness for the channel open circuit
- *
- * @param host_t - targets for host proof
- * @param guest_t - targets for guest proof
- * @param host_p - host proof of valid board
- * @param guest_p - guest proof of valid board
- * @param shot - opening shot to be made by host
- * @param shot_t - targets for opening shot
- * @return partial witness for battleship channel open circuit
- */
-pub fn parstial_witness(
-    host_p: ProofTuple<F, C, D>,
-    guest_p: ProofTuple<F, C, D>,
-    shot: [u8; 2],
-    shot_t: [Target; 2],
-) -> Result<PartialWitness<F>> {
-    // construct partial witness
-    let mut pw = PartialWitness::new();
-
-    // witness host proof
-    pw.set_proof_with_pis_target(&host_t.proof, &host_p.0);
-    pw.set_verifier_data_target(&host_t.verifier, &host_p.1);
-
-    // witness guest proof
-    pw.set_proof_with_pis_target(&guest_t.proof, &guest_p.0);
-    pw.set_verifier_data_target(&guest_t.verifier, &guest_p.1);
-
-    // witness opening shot coordinates
-    pw.set_target(shot_t[0], F::from_canonical_u8(shot[0]));
-    pw.set_target(shot_t[1], F::from_canonical_u8(shot[1]));
-
-    // return witnessed inputs
-    Ok(pw)
-}
-
-pub fn decode_public(proof: ProofWithPublicInputs<F, C, D>) -> Result<([u64; 4], [u64; 4])> {
-    // decode host commitment
-    let host: [u64; 4] = proof.clone().public_inputs[0..4]
-        .iter()
-        .map(|x| x.to_canonical_u64())
-        .collect::<Vec<u64>>()
-        .try_into()
-        .unwrap();
-
-    // decode guest commitment
-    let guest: [u64; 4] = proof.clone().public_inputs[0..4]
-        .iter()
-        .map(|x| x.to_canonical_u64())
-        .collect::<Vec<u64>>()
-        .try_into()
-        .unwrap();
-
-    Ok((host, guest))
-}
-
-/**
- * Construct a proof to open a Battleships game state channel
- *
- * @param host - proof of valid board made by host
- * @param guest - proof of valid board made by guest
- * @param shot - opening shot to be made by host
- * @return - proof that a valid game state channel has been opened
- */
-pub fn prove_channel_open(
-    host: ProofTuple<F, C, D>,
-    guest: ProofTuple<F, C, D>,
-    shot: [u8; 2],
-) -> Result<ProofTuple<F, C, D>> {
-    // instantiate config for channel open circuit
-    let config = CircuitConfig::standard_recursion_config();
-    let mut builder = CircuitBuilder::<F, D>::new(config.clone());
-
-    // TARGETS ///
-
-    // host board proof targets
-    let host_pt = builder.add_virtual_proof_with_pis(&host.2);
-    let host_data = builder.add_virtual_verifier_data(host.2.config.fri_config.cap_height);
-    let host_t = ShieldedTargets {
-        proof: host_pt.clone(),
-        verifier: host_data.clone(),
-    };
-
-    // guest board proof targets
-    let guest_pt = builder.add_virtual_proof_with_pis(&guest.2);
-    let guest_data = builder.add_virtual_verifier_data(guest.2.config.fri_config.cap_height);
-    let guest_t = ShieldedTargets {
-        proof: guest_pt.clone(),
-        verifier: guest_data.clone(),
-    };
-
-    // opening shot coordinate targets
-    let shot_t: [Target; 2] = builder.add_virtual_targets(2).try_into().unwrap();
-
-    // SYNTHESIZE //
-    // verify commitments from each player
-    builder.verify_proof::<C>(&host_pt, &host_data, &host.2);
-    builder.verify_proof::<C>(&guest_pt, &guest_data, &guest.2);
-
-    // constrain the opening shot from the host
-    let serialized_t = serialize_shot(shot_t[0], shot_t[1], &mut builder).unwrap();
-
-    // export board commitments publicly
-    //  - [0..4] = host commitment
-    //  - [4..8] = guest commitment
-    //  - [8] = serialized opening shot coordinate
-    // @todo: add pubkeys
-    builder.register_public_inputs(&host_pt.public_inputs);
-    builder.register_public_inputs(&guest_pt.public_inputs);
-    builder.register_public_input(serialized_t);
-
-    // construct circuit data
-    let data = builder.build::<C>();
-
-    // compute partial witness
-    let pw = partial_witness(host_t, guest_t, host, guest, shot, shot_t)?;
-
-    // prove outer proof provides valid shielding of a board validity circuit
-    let mut timing = TimingTree::new("prove", Level::Debug);
-    let proof = prove(&data.prover_only, &data.common, pw, &mut timing)?;
-    timing.print();
-
-    // verify the outer proof's integrity
-    data.verify(proof.clone())?;
-
-    // return outer proof artifacts
-    Ok((proof, data.verifier_only, data.common))
-}
-
-// pub fn
 
 #[cfg(test)]
 mod tests {
@@ -589,75 +464,38 @@ mod tests {
         utils::{board::Board, ship::Ship},
     };
 
-    #[test]
-    pub fn test_shielded_channel_open() {
-        // INPUTS
-        // host board (inner)
-        let host_board = Board::new(
-            Ship::new(3, 4, false),
-            Ship::new(9, 6, true),
-            Ship::new(0, 0, false),
-            Ship::new(0, 6, false),
-            Ship::new(6, 1, true),
-        );
-        // guest board (inner)
-        let guest_board = Board::new(
-            Ship::new(3, 3, true),
-            Ship::new(5, 4, false),
-            Ship::new(0, 1, false),
-            Ship::new(0, 5, true),
-            Ship::new(6, 1, false),
-        );
-        // opening shot (outer/ main opening chanel proof)
-        let shot = [3u8, 4];
+    // #[test]
+    // pub fn test_unshielded_channel_open() {
+    //     // @notice: not used in production but facilitates quick testing
 
-        // prove inner proofs
-        let host_inner = BoardCircuit::prove_inner(host_board.clone()).unwrap();
-        println!("1. Host inner proof successful");
-        let host_p = BoardCircuit::prove_outer(host_inner).unwrap();
-        println!("2. Host outer proof successful");
-        let guest_inner = BoardCircuit::prove_inner(guest_board.clone()).unwrap();
-        println!("3. Guest inner proof successful");
-        let guest_p = BoardCircuit::prove_outer(guest_inner).unwrap();
-        println!("4. Guest outer proof successful");
+    //     // INPUTS
+    //     // host board (inner)
+    //     let host_board = Board::new(
+    //         Ship::new(3, 4, false),
+    //         Ship::new(9, 6, true),
+    //         Ship::new(0, 0, false),
+    //         Ship::new(0, 6, false),
+    //         Ship::new(6, 1, true),
+    //     );
+    //     // guest board (inner)
+    //     let guest_board = Board::new(
+    //         Ship::new(3, 3, true),
+    //         Ship::new(5, 4, false),
+    //         Ship::new(0, 1, false),
+    //         Ship::new(0, 5, true),
+    //         Ship::new(6, 1, false),
+    //     );
+    //     // opening shot (outer/ main opening chanel proof)
+    //     let shot = [3u8, 4];
 
-        // recursively prove the integrity of a zk state channel opening
-        let channel_open = prove_channel_open(host_p, guest_p, shot).unwrap();
-        println!("channel opened!");
-    }
+    //     // prove inner proofs
+    //     let host = BoardCircuit::prove_inner(host_board.clone()).unwrap();
+    //     println!("1. Host board proof successful");
+    //     let guest = BoardCircuit::prove_inner(guest_board.clone()).unwrap();
+    //     println!("2. Guest board proof successful");
 
-    #[test]
-    pub fn test_unshielded_channel_open() {
-        // @notice: not used in production but facilitates quick testing
-
-        // INPUTS
-        // host board (inner)
-        let host_board = Board::new(
-            Ship::new(3, 4, false),
-            Ship::new(9, 6, true),
-            Ship::new(0, 0, false),
-            Ship::new(0, 6, false),
-            Ship::new(6, 1, true),
-        );
-        // guest board (inner)
-        let guest_board = Board::new(
-            Ship::new(3, 3, true),
-            Ship::new(5, 4, false),
-            Ship::new(0, 1, false),
-            Ship::new(0, 5, true),
-            Ship::new(6, 1, false),
-        );
-        // opening shot (outer/ main opening chanel proof)
-        let shot = [3u8, 4];
-
-        // prove inner proofs
-        let host = BoardCircuit::prove_inner(host_board.clone()).unwrap();
-        println!("1. Host board proof successful");
-        let guest = BoardCircuit::prove_inner(guest_board.clone()).unwrap();
-        println!("2. Guest board proof successful");
-
-        // recursively prove the integrity of a zk state channel opening
-        _ = prove_channel_open(host, guest, shot).unwrap();
-        println!("channel opened!");
-    }
+    //     // recursively prove the integrity of a zk state channel opening
+    //     _ = prove_channel_open(host, guest, shot).unwrap();
+    //     println!("channel opened!");
+    // }
 }
