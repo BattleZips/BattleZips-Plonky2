@@ -46,4 +46,18 @@ Caveat: ZK State Channels remedy the optimistic trust assumptions of legacy stat
 2. guest generates a board proof
 3. host verifies integrity of both board proofs and creates channel open proof with initial game state as "public" outputs
 ### Channel State Increment Proof
-todo
+1. verify previous state increment proof (including the channel open proof)
+2. verify the inner shot proof for the turn
+3. extract hit from shot proof, extract turn, host/guest damage from previous state increment proof
+4. multiplex damage increment for host or guest with turn boolean as selector and add hit boolean
+5. extract shot, commitment from both the previous state increment and inner shot proof
+6. multiplex the commitment from prev shot proof being checked using the turn boolean as a selector (host or guest)
+7. copy constrain the commitment and serialized shot from previous state increment proof and shot proof
+8. serialize next shot for subsequent state increment proofs to prove against
+9. flip turn boolean
+10. export public outputs
+  - copy board commitments from previous shot proof
+  - register new damage counts from multiplexed hit expresion
+  - register flipped turn boolean
+  - register next shot
+### Channel Close Proof

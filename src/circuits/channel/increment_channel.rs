@@ -1,5 +1,3 @@
-use plonky2::iop::witness;
-
 use {
     super::{
         super::{ProofTuple, RecursiveTargets, C, D, F},
