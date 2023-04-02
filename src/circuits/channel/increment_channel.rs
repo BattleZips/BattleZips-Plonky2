@@ -1,26 +1,319 @@
+use plonky2::iop::witness;
+
 use {
     super::{
-        super::{ProofTuple, ShieldedTargets, C, D, F},
+        super::{ProofTuple, RecursiveTargets, C, D, F},
         {GameState, GameTargets},
     },
-    crate::gadgets::shot::serialize_shot,
+    crate::{circuits::game::shot::ShotCircuit, gadgets::shot::serialize_shot},
     anyhow::Result,
     log::Level,
     plonky2::{
         field::types::{Field, PrimeField64},
         iop::{
-            target::Target,
+            target::{BoolTarget, Target},
             witness::{PartialWitness, WitnessWrite},
         },
         plonk::{
-            circuit_builder::CircuitBuilder, circuit_data::CircuitConfig,
-            proof::ProofWithPublicInputs, prover::prove,
+            circuit_builder::CircuitBuilder,
+            circuit_data::CircuitConfig,
+            circuit_data::{CircuitData, CommonCircuitData},
+            proof::ProofWithPublicInputs,
+            prover::prove,
         },
         util::timing::TimingTree,
     },
 };
 
 // BattleZips Channel Increment: Recursive (non zk) proof applying hit to game state
+
+// State Increment Circuit Object
+pub struct StateIncrementCircuit {
+    pub data: CircuitData<F, C, D>, // circuit data for a given state increment
+    pub prev: GameTargets,          // targets for previous state increment proof
+    pub shot: RecursiveTargets,     // targets for shot proof
+    pub shot_t: [Target; 2],        // targets for shot coordinates
+}
+
+// Targets for recursive shot proof verification
+pub struct ShotProofTargets {
+    proof: RecursiveTargets,
+    commitment: [Target; 4],
+    hit: BoolTarget,
+    shot: Target,
+}
+
+impl StateIncrementCircuit {
+    /**
+     * Witness the inner shot proof
+     *
+     * @param pw - partial witness to write to
+     * @param shot_p - inner shot proof of state increment
+     * @param shot_pt - targets of inner shot proof
+     * @param commitment_t - targets of commitments to host and guest boards
+     * @param hit_t - target of hit boolean
+     * @param shot_t - target of serialized shot coordinate
+     * @return - error or success
+     */
+    pub fn witness_shot(
+        pw: &mut PartialWitness<F>,
+        shot_p: ProofTuple<F, C, D>,
+        shot_pt: RecursiveTargets,
+        commitment_t: [Target; 4],
+        hit_t: BoolTarget,
+        shot_t: Target,
+    ) -> Result<()> {
+        // extract proof inputs from shot circuit
+        let outputs = ShotCircuit::decode_public(shot_p.0.clone())?;
+
+        // witness shot proof
+        pw.set_proof_with_pis_target(&shot_pt.proof, &shot_p.0);
+        pw.set_verifier_data_target(&shot_pt.verifier, &shot_p.1);
+
+        // witness commitment of board checked in shot proof
+        pw.set_target(
+            commitment_t[0],
+            F::from_canonical_u64(outputs.commitment[0]),
+        );
+        pw.set_target(
+            commitment_t[1],
+            F::from_canonical_u64(outputs.commitment[1]),
+        );
+        pw.set_target(
+            commitment_t[2],
+            F::from_canonical_u64(outputs.commitment[2]),
+        );
+        pw.set_target(
+            commitment_t[3],
+            F::from_canonical_u64(outputs.commitment[3]),
+        );
+
+        // witness hit/miss assertion
+        pw.set_bool_target(hit_t, outputs.hit);
+
+        // witness serialized shot coordinate
+        pw.set_target(shot_t, F::from_canonical_u8(outputs.shot));
+
+        // return success after mutating partial witness
+        Ok(())
+    }
+
+    /**
+     * Witness the previous state increment proof
+     *
+     * @param pw - partial witness to write to
+     * @param prev_state - previous state increment proof tuple
+     * @param game_state_t - targets of previous state increment proof
+     *
+     * @return - error or success
+     */
+    pub fn witness_prev_state(
+        pw: &mut PartialWitness<F>,
+        prev_state: ProofTuple<F, C, D>,
+        game_state_t: GameTargets,
+    ) -> Result<()> {
+        // extract the state from the previous state increment proof
+        let state = decode_public(prev_state.0)?;
+
+        // witness previous state proof (either channel open proof or channel state increment proof)
+        pw.set_proof_with_pis_target(&game_state_t.prev_proof.proof, &prev_state.0);
+        pw.set_verifier_data_target(&game_state_t.prev_proof.verifier, &prev_state.1);
+
+        // witness host board commitment
+        pw.set_target(game_state_t.host[0], F::from_canonical_u64(state.host[0]));
+        pw.set_target(game_state_t.host[1], F::from_canonical_u64(state.host[1]));
+        pw.set_target(game_state_t.host[2], F::from_canonical_u64(state.host[2]));
+        pw.set_target(game_state_t.host[3], F::from_canonical_u64(state.host[3]));
+
+        // witness guest board commitment
+        pw.set_target(game_state_t.guest[0], F::from_canonical_u64(state.guest[0]));
+        pw.set_target(game_state_t.guest[1], F::from_canonical_u64(state.guest[1]));
+        pw.set_target(game_state_t.guest[2], F::from_canonical_u64(state.guest[2]));
+        pw.set_target(game_state_t.guest[3], F::from_canonical_u64(state.guest[3]));
+
+        // witness host damage
+        pw.set_target(
+            game_state_t.host_damage,
+            F::from_canonical_u8(state.host_damage),
+        );
+
+        // witness guest damage
+        pw.set_target(
+            game_state_t.guest_damage,
+            F::from_canonical_u8(state.guest_damage),
+        );
+
+        // witness turn
+        pw.set_bool_target(game_state_t.turn, state.turn);
+
+        // witness shot
+        pw.set_target(game_state_t.shot, F::from_canonical_u8(state.shot));
+
+        // return ok with witnessed inputs in mutated pw
+        Ok(())
+    }
+
+    /**
+     * Witness the x, y coordinates of the next shot (that the subsequent state increment must approve)
+     * @notice if the state increment reaches an end condition, the next shot is ignored for channel closing
+     *
+     * @param pw - partial witness to write to
+     * @param next_shot - shot x, y coordinates to check against next state increment
+     * @param next_shot_t - targets of next shot coordinates
+     * @return - error or success
+     */
+    pub fn witness_next_shot(
+        pw: &mut PartialWitness<F>,
+        next_shot: [u8; 2],
+        next_shot_t: [Target; 2],
+    ) -> Result<()> {
+        // witness next shot coordinate
+        pw.set_target(next_shot_t[0], F::from_canonical_u8(next_shot[0]));
+        pw.set_target(next_shot_t[1], F::from_canonical_u8(next_shot[1]));
+
+        // return ok with witnessed inputs in mutated pw
+        Ok(())
+    }
+
+    /**
+     * Construct virtual targets for the public inputs of a state increment proof in a logically formatted GameTargets object
+     *
+     * @param common - common circuit data used to verify a state increment circuit
+     * @param builder - circuit builder to construct circuit with
+     * @return - a GameTargets object that stores virtual targets according to logical purpose of a state increment
+     */
+    pub fn game_state_targets(
+        common: &CommonCircuitData<F, D>,
+        builder: &mut CircuitBuilder<F, D>,
+    ) -> Result<GameTargets> {
+        Ok(GameTargets {
+            prev_proof: RecursiveTargets {
+                proof: builder.add_virtual_proof_with_pis(common),
+                verifier: builder.add_virtual_verifier_data(common.config.fri_config.cap_height),
+            },
+            host: builder.add_virtual_target_arr::<4>(),
+            guest: builder.add_virtual_target_arr::<4>(),
+            host_damage: builder.add_virtual_target(),
+            guest_damage: builder.add_virtual_target(),
+            turn: builder.add_virtual_bool_target_safe(),
+            shot: builder.add_virtual_target(),
+        })
+    }
+
+    /**
+     * Construct virtual targets for the public inputs of a shot proof in a logically formatted ShotProofTargets object
+     *
+     * @param common - common circuit data used to verify a shot circuit
+     * @param builder - circuit builder to construct circuit with
+     * @return - a GameTargets object that stores virtual targets according to logical purpose of a state increment
+     */
+    pub fn shot_proof_targets(
+        common: &CommonCircuitData<F, D>,
+        builder: &mut CircuitBuilder<F, D>,
+    ) -> Result<ShotProofTargets> {
+        Ok(ShotProofTargets {
+            proof: RecursiveTargets {
+                proof: builder.add_virtual_proof_with_pis(common),
+                verifier: builder.add_virtual_verifier_data(common.config.fri_config.cap_height),
+            },
+            commitment: builder.add_virtual_target_arr::<4>(),
+            hit: builder.add_virtual_bool_target_safe(),
+            shot: builder.add_virtual_target(),
+        })
+    }
+
+    /**
+     * Apply copy constraints to commitments between prev state increment proof and shot proof
+     * @notice multiplexes targeted commitment based on turn boolean
+     * @dev board commitment checked in shot proof must be equal to the private state committed to in channel open
+     *
+     * @param builder - circuit builder to construct circuit with
+     * @param prev - previous state increment proof targets
+     * @param shot - shot proof targets
+     * @return - success if copy constraints on board commitment are satisfied, or error
+     */
+    pub fn constrain_commitment(
+        builder: &mut CircuitBuilder<F, D>,
+        prev: &GameTargets,
+        shot: &ShotProofTargets,
+    ) -> Result<()> {
+        // define constained commitment targets
+        let constrained_commitment = builder.add_virtual_target_arr::<4>();
+        for i in 0..constrained_commitment.len() {
+            // multiplex between host and guest commitment based on turn
+            let limb = builder.select(prev.turn, prev.guest[i], prev.host[i]);
+            // constrain commitment target based on multiplexed input
+            builder.connect(constrained_commitment[i], limb);
+        }
+        // return as a success
+        Ok(())
+    }
+
+    /**
+     * Apply copy constraints to shot coordinates between prev state increment proof and shot proof
+     * @dev shot coordinate checked in shot proof must be equal to the "next shot" made in the previous state increment proof
+     *
+     * @param builder - circuit builder to construct circuit with
+     * @param prev - previous state increment proof targets
+     * @param shot - shot proof targets
+     * @return - success if copy constraints on board commitment are satisfied, or error
+     */
+    pub fn constrain_shot(
+        builder: &mut CircuitBuilder<F, D>,
+        prev: &GameTargets,
+        shot: &ShotProofTargets,
+    ) -> Result<()> {
+        // constrain shot coordinate
+        builder.connect(prev.shot, shot.shot);
+        // return as a success
+        Ok(())
+    }
+
+    /**
+     * Prove the validity of a sequential state increment
+     *
+     * @param prev - previous state increment proof
+     * @param shot - shot proof that informs the state increment
+     * @param next - next shot to be evaluated in subsequent state increment
+     * @return - a channel state increment circuit
+     */
+    pub fn prove(
+        prev: ProofTuple<F, C, D>,
+        shot: ProofTuple<F, C, D>,
+        next: [u8; 2],
+    ) -> Result<StateIncrementCircuit> {
+        // CONFIG //
+        let config = CircuitConfig::standard_recursion_config();
+        let mut builder = CircuitBuilder::<F, D>::new(config.clone());
+
+        // TARGETS //
+        // prev state increment proof targets
+        let prev_state_t = StateIncrementCircuit::game_state_targets(&prev.2, &mut builder)?;
+        // shot proof targets
+        let shot_t = StateIncrementCircuit::shot_proof_targets(&shot.2, &mut builder)?;
+        // next shot targets
+        let next_shot_t = builder.add_virtual_target_arr::<2>();
+
+        // SYNTHESIZE //
+        // verify inner proofs
+        builder.verify_proof::<C>(
+            &prev_state_t.prev_proof.proof,
+            &prev_state_t.prev_proof.verifier,
+            &prev.2,
+        );
+        builder.verify_proof::<C>(&shot_t.proof.proof, &shot_t.proof.verifier, &shot.2);
+        // copy constrain values checked in shot proof against values to be checked according to previous state increment
+        StateIncrementCircuit::constrain_commitment(&mut builder, &&prev_state_t, &shot_t)?;
+        StateIncrementCircuit::constrain_shot(&mut builder, &&prev_state_t, &shot_t)?;
+        // serialize next shot to be verified in subsequent state increment proof
+        let next_shot_serialized_t = serialize_shot(next_shot_t[0], next_shot_t[1], &mut builder)?;
+        // flip turn (0 = 0 -> 1; 1 = 0 -> 0)
+        let zero = builder.constant(F::ZERO);
+        let next_turn_t = builder.is_equal(targets.turn.target, zero);
+
+        // PUBLIC INPUTS //
+    }
+}
 
 /**
  * Decode public inputs of a state increment proof
@@ -70,63 +363,92 @@ pub fn decode_public(proof: ProofWithPublicInputs<F, C, D>) -> Result<GameState>
 }
 
 /**
- * Witness the current state of the game and the next proof to be made
- *
- * @param prev_state - state of game before incrmeemnting
- * @param game_state_t - targets for inputted previous state for state increment
- * @param next_shot - the shot that the following state increment must evaluate for hit/ miss
- * @param next_shot_t - the targets for the following shot
- * @return - partial witness containing the values for constructing a state increment proof based on previous state
- */
-pub fn partial_witness(
-    prev_state: ProofTuple<F, C, D>,
-    game_state_t: GameTargets,
-    next_shot: [u8; 2],
-    next_shot_t: [Target; 2],
-) -> Result<PartialWitness<F>> {
-    // construct partial witness
-    let mut pw = PartialWitness::new();
-
-    // extract the state from the previous state increment proof
-    let state = decode_public(prev_state.0)?;
-
-    // witness previous state proof (either channel open proof or channel state increment proof)
-    pw.set_proof_with_pis_target(&game_state_t.prev_proof.proof, &prev_state.0);
-    pw.set_verifier_data_target(&game_state_t.prev_proof.verifier, &prev_state.1);
-
-    // witness host board commitment
-    pw.set_target(game_state_t.host[0], F::from_canonical_u64(state.host[0]));
-    pw.set_target(game_state_t.host[1], F::from_canonical_u64(state.host[1]));
-    pw.set_target(game_state_t.host[2], F::from_canonical_u64(state.host[2]));
-    pw.set_target(game_state_t.host[3], F::from_canonical_u64(state.host[3]));
-
-    // witness guest board commitment
-    pw.set_target(game_state_t.guest[0], F::from_canonical_u64(state.guest[0]));
-    pw.set_target(game_state_t.guest[1], F::from_canonical_u64(state.guest[1]));
-    pw.set_target(game_state_t.guest[2], F::from_canonical_u64(state.guest[2]));
-    pw.set_target(game_state_t.guest[3], F::from_canonical_u64(state.guest[3]));
-
-    // witness host damage
-    pw.set_target(game_state_t.host_damage, F::from_canonical_u8(state.host_damage));
-
-    // witness guest damage
-    pw.set_target(game_state_t.guest_damage, F::from_canonical_u8(state.guest_damage));
-    
-    // witness turn
-    pw.set_bool_target(game_state_t.turn, state.turn);
-
-    // witness shot
-    pw.set_target(game_state_t.shot, F::from_canonical_u8(state.shot));
-
-    // return witnessed inputs
-    Ok(pw)
-}
-
-/**
  * Given the current state of the game, increment the game by proving a hit/ miss and asserting a shot for next player
  * @dev todo: add ecc keypair to constrain host_turn order
  */
-pub fn prove_channel_increment(state_t: GameTargets) -> Result<ProofWithPublicInputs<F, C, D>> {}
+pub fn prove_channel_increment(
+    prev_p: ProofTuple<F, C, D>,
+    shot_p: ProofTuple<F, C, D>,
+    shot: [u8; 2],
+) -> Result<ProofTuple<F, C, D>> {
+    // instantiate config for channel open circuit
+    let config = CircuitConfig::standard_recursion_config();
+    let mut builder = CircuitBuilder::<F, D>::new(config.clone());
+
+    // TARGETS //
+
+    // channel targets
+    // let targets = ;
+
+    // inner shot proof targets
+    let shot_pt = RecursiveTargets {
+        proof: builder.add_virtual_proof_with_pis(&shot_p.2),
+        verifier: builder.add_virtual_verifier_data(shot_p.2.config.fri_config.cap_height),
+    };
+
+    // shot proof output targets
+    let commitment_t = builder.add_virtual_target_arr::<4>();
+    let hit_t = builder.add_virtual_bool_target_safe();
+    let shot_t = builder.add_virtual_target();
+
+    // next shot targets
+    let next_shot_t = builder.add_virtual_target_arr::<2>();
+
+    // SYNTHESIZE //
+    // verify inner proofs
+    builder.verify_proof::<C>(
+        &targets.prev_proof.proof,
+        &targets.prev_proof.verifier,
+        &prev_p.2,
+    );
+    builder.verify_proof::<C>(&shot_pt.proof, &shot_pt.verifier, &shot_p.2);
+
+    // mutiplex damage equation
+    // if turn = 1, ignore increment as hits apply to guest, else increment according to hit value
+    let host_damage_increment = builder.add(targets.host_damage, hit_t.target);
+    let multiplexed_host_damage =
+        builder.select(targets.turn, targets.host_damage, host_damage_increment);
+
+    // if turn = 0, ignore increment as hits apply to host, else increment according to hit value
+    let guest_damage_increment = builder.add(targets.host_damage, hit_t.target);
+    let multiplexed_guest_damage =
+        builder.select(targets.turn, guest_damage_increment, targets.guest_damage);
+
+    // serialize next shot
+    let serialized_t = serialize_shot(next_shot_t[0], next_shot_t[1], &mut builder).unwrap();
+
+    // flip turn
+    let zero = builder.constant(F::ZERO);
+    // 0 = 0 -> 1; 1 = 0 -> 0
+    let next_turn_t = builder.is_equal(targets.turn.target, zero);
+
+    // OUTPUTS //
+    // pipe through the board commitments
+    builder.register_public_inputs(&targets.host);
+    builder.register_public_inputs(&targets.guest);
+
+    // output mutiplexed damage values
+    builder.register_public_input(multiplexed_host_damage);
+    builder.register_public_input(multiplexed_guest_damage);
+
+    // output flipped turn
+    builder.register_public_input(targets.turn.target);
+
+    // output the shot that the next state increment must verify
+    builder.register_public_input(serialized_t);
+
+    // WITNESS //
+    let mut pw = PartialWitness::new();
+    // witness shot proof
+    witness_shot(&mut pw, shot_p, shot_pt, commitment_t, hit_t, shot_t);
+
+    // witness previous state proof
+    witness_prev_state(&mut pw, prev_p, targets);
+
+    // witness next shot
+    witness_next_shot(&mut pw, shot, next_shot_t);
+    // PROVE //
+}
 
 /**
  * Construct a partial witness for the channel open circuit
