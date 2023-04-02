@@ -112,7 +112,7 @@ pub fn prove_close_channel(state_p: ProofTuple<F, C, D>) -> Result<ProofTuple<F,
         &state_p.2,
     );
     // multiplex damage to evaluate whether end condition is met
-    let threshold = builder.constant(F::from_canonical_u8(17));
+    let threshold = builder.constant(F::from_canonical_u8(3));
     let damage_t = builder.select(turn_t, host_damage_t, guest_damage_t);
     let end_condition = builder.is_equal(damage_t, threshold);
     let end_const = builder.constant_bool(true);
@@ -151,12 +151,7 @@ pub fn prove_close_channel(state_p: ProofTuple<F, C, D>) -> Result<ProofTuple<F,
     let data = builder.build::<C>();
     // generate proof
     let mut timing = TimingTree::new("prove", Level::Debug);
-    let proof = prove(
-        &data.prover_only,
-        &data.common,
-        pw,
-        &mut timing,
-    )?;
+    let proof = prove(&data.prover_only, &data.common, pw, &mut timing)?;
     timing.print();
 
     // verify the proof was generated correctly
@@ -164,4 +159,148 @@ pub fn prove_close_channel(state_p: ProofTuple<F, C, D>) -> Result<ProofTuple<F,
 
     // PROVE //
     Ok((proof, data.verifier_only, data.common))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        circuits::{
+            channel::{increment_channel::StateIncrementCircuit, open_channel::prove_channel_open},
+            game::{board::BoardCircuit, shot::ShotCircuit},
+        },
+        utils::{board::Board, ship::Ship},
+    };
+
+    // series of shots that will hit every position on the host board configuration
+    const HOST_HIT_COORDS: [[u8; 2]; 18] = [
+        [0, 0],
+        [1, 0],
+        [2, 0],
+        [6, 1],
+        [6, 2],
+        [3, 4],
+        [4, 4],
+        [5, 4],
+        [6, 4],
+        [7, 4],
+        [0, 6],
+        [1, 6],
+        [2, 6],
+        [9, 6],
+        [9, 7],
+        [9, 8],
+        [9, 9],
+        [8, 8] // dummy coordinate
+    ];
+
+    /**
+     * Open a ZK State Channel by proving a valid board configuration for both host and guest
+     *
+     * @param host - the board configuration for the host
+     * @param guest - the board configuration for the guest
+     * @param shot - the first shot made by the host
+     * @returns a proof tuple for the open channel circuit
+     */
+    pub fn open_channel(host: Board, guest: Board, shot: [u8; 2]) -> Result<ProofTuple<F, C, D>> {
+        let host = BoardCircuit::prove_inner(host.clone()).unwrap();
+        let guest = BoardCircuit::prove_inner(guest.clone()).unwrap();
+        let open_proof = prove_channel_open(host, guest, shot).unwrap();
+        println!("channel opened!");
+        Ok(open_proof)
+    }
+
+    /**
+     * Increment the state of a ZK State Channel by proving a shot was made
+     *
+     * @param board - the board configuration being checked
+     * @param shot - the shot being checked against the board in this state increment
+     * @param prev - the previous state of the channel
+     * @param next_shot - the next shot to be checked in subsequent state increment
+     * @return - a proof tuple for the state increment
+     */
+    pub fn increment_channel_state(
+        board: Board,
+        shot: [u8; 2],
+        prev: ProofTuple<F, C, D>,
+        next_shot: [u8; 2],
+    ) -> Result<ProofTuple<F, C, D>> {
+        let shot_proof = ShotCircuit::prove_inner(board.clone(), shot).unwrap();
+        Ok(StateIncrementCircuit::prove(prev.clone(), shot_proof.clone(), next_shot).unwrap())
+    }
+
+    #[test]
+    pub fn test_unshielded_zk_state_channel() {
+        // INPUTS
+        // host board (inner)
+        let host_board = Board::new(
+            Ship::new(3, 4, false),
+            Ship::new(9, 6, true),
+            Ship::new(0, 0, false),
+            Ship::new(0, 6, false),
+            Ship::new(6, 1, true),
+        );
+        // guest board (inner)
+        let guest_board = Board::new(
+            Ship::new(3, 3, true),
+            Ship::new(5, 4, false),
+            Ship::new(0, 1, false),
+            Ship::new(0, 5, true),
+            Ship::new(6, 1, false),
+        );
+        // opening shot (outer/ main opening chanel proof)
+
+        // CHANNEL OPEN PROOF
+        let mut previous_p =
+            open_channel(host_board.clone(), guest_board.clone(), HOST_HIT_COORDS[0]).unwrap();
+
+        // recursively prove entire state channel
+        for i in 0..3 {
+
+            // GUEST state increment
+            previous_p = increment_channel_state(
+                guest_board.clone(),
+                HOST_HIT_COORDS[i],
+                previous_p.clone(),
+                HOST_HIT_COORDS[i],
+            )
+            .unwrap();
+            println!("guest state increment #{}", i + 1);
+
+            // HOST state increment
+            previous_p = increment_channel_state(
+                host_board.clone(),
+                HOST_HIT_COORDS[i],
+                previous_p.clone(),
+                HOST_HIT_COORDS[i + 1],
+            )
+            .unwrap();
+            println!("host state increment #{}", i + 1);
+        }
+
+        // FINALIZE STATE CHANNEL
+        let state_channel_proof = prove_close_channel(previous_p.clone()).unwrap();
+
+        // Check State Channel Increment Outputs
+        let winner: [u64; 4] = state_channel_proof.0.clone().public_inputs[0..4]
+            .iter()
+            .map(|x| x.to_canonical_u64())
+            .collect::<Vec<u64>>()
+            .try_into()
+            .unwrap();
+        let loser: [u64; 4] = state_channel_proof.0.clone().public_inputs[4..8]
+            .iter()
+            .map(|x| x.to_canonical_u64())
+            .collect::<Vec<u64>>()
+            .try_into()
+            .unwrap();
+        let expected_winner = guest_board.hash();
+        println!("expected: {:?}", expected_winner);
+        println!("winner: {:?}", winner);
+        let expected_loser = host_board.hash();
+        println!("expected: {:?}", expected_loser);
+        println!("loser: {:?}", loser);
+        assert_eq!(winner, expected_winner);
+        assert_eq!(loser, expected_loser);
+    }
 }
