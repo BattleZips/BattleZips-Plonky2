@@ -377,7 +377,7 @@ impl StateIncrementCircuit {
         // WITNESS //
         let mut pw = PartialWitness::new();
         // witness the previous state increment proof
-        StateIncrementCircuit::witness_prev_state(&mut pw, prev_p, circuit.prev);
+        StateIncrementCircuit::witness_prev_state(&mut pw, prev_p, circuit.prev)?;
         // witness inner shot proof
         StateIncrementCircuit::witness_shot(
             &mut pw,
@@ -386,9 +386,9 @@ impl StateIncrementCircuit {
             circuit.shot.commitment,
             circuit.shot.hit,
             circuit.shot.shot
-        );
+        )?;
         // witness next shot
-        StateIncrementCircuit::witness_next_shot(&mut pw, shot, circuit.next_shot);
+        StateIncrementCircuit::witness_next_shot(&mut pw, shot, circuit.next_shot)?;
 
         // PROVE //
         // generate proof
@@ -460,9 +460,64 @@ impl StateIncrementCircuit {
 mod tests {
     use super::*;
     use crate::{
-        circuits::game::board::BoardCircuit,
+        circuits::{
+            game::{
+                board::BoardCircuit,
+                shot::ShotCircuit
+            },
+            channel::open_channel::prove_channel_open
+        },
         utils::{board::Board, ship::Ship},
     };
+
+    #[test]
+    pub fn test_unshielded_state_increment_() {
+        // INPUTS
+        // host board (inner)
+        let host_board = Board::new(
+            Ship::new(3, 4, false),
+            Ship::new(9, 6, true),
+            Ship::new(0, 0, false),
+            Ship::new(0, 6, false),
+            Ship::new(6, 1, true),
+        );
+        // guest board (inner)
+        let guest_board = Board::new(
+            Ship::new(3, 3, true),
+            Ship::new(5, 4, false),
+            Ship::new(0, 1, false),
+            Ship::new(0, 5, true),
+            Ship::new(6, 1, false),
+        );
+        // opening shot (outer/ main opening chanel proof)
+        let shot_0 = [3u8, 4];
+
+        // CHANNEL OPEN PROOF
+        let host = BoardCircuit::prove_inner(host_board.clone()).unwrap();
+        let guest = BoardCircuit::prove_inner(guest_board.clone()).unwrap();
+        let open_proof = prove_channel_open(host, guest, shot_0).unwrap();
+        println!("channel opened!");
+
+        // GUEST STATE INCREMENT
+        let shot_1 = [0u8, 0]; // shot for next state increment
+        let shot_proof_0 = ShotCircuit::prove_inner(guest_board.clone(), shot_0).unwrap();
+        let state_increment_1 = StateIncrementCircuit::prove(
+            open_proof.clone(),
+            shot_proof_0.clone(),
+            shot_1,
+        ).unwrap();
+        println!("state increment #1");
+
+        // HOST STATE INCREMENT
+        let shot_2 = [1u8, 1]; // shot for next state increment (NOT USED IN THIS TEST GIVEN NO MORE INCREMENTS)
+        let shot_proof_1 = ShotCircuit::prove_inner(host_board.clone(), shot_1).unwrap();
+        let state_increment_2 = StateIncrementCircuit::prove(
+            state_increment_1.clone(),
+            shot_proof_1.clone(),
+            shot_2,
+        ).unwrap();
+        println!("state increment #2");
+    }
 
     // #[test]
     // pub fn test_unshielded_channel_open() {
