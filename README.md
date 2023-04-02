@@ -20,7 +20,7 @@ Caveat: ZK State Channels remedy the optimistic trust assumptions of legacy stat
 
 ### State Channel Proofs
  - [x] channel open proof
- - [ ] channel state increment proof 
+ - [x] channel state increment proof 
  - [ ] channel close proof (AKA "ZK State Channel Proof")
  - [ ] example case of full PoC battleship state channel (show the full generation of a ZK State Channel Proof with instant finality)
 

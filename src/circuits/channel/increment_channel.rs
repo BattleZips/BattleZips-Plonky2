@@ -471,7 +471,7 @@ mod tests {
     };
 
     #[test]
-    pub fn test_unshielded_state_increment_() {
+    pub fn test_unshielded_state_increment_small() {
         // INPUTS
         // host board (inner)
         let host_board = Board::new(
@@ -519,38 +519,102 @@ mod tests {
         println!("state increment #2");
     }
 
-    // #[test]
-    // pub fn test_unshielded_channel_open() {
-    //     // @notice: not used in production but facilitates quick testing
+    #[test]
+    pub fn test_unshielded_state_increment_med() {
+        // INPUTS
+        // host board (inner)
+        let host_board = Board::new(
+            Ship::new(3, 4, false),
+            Ship::new(9, 6, true),
+            Ship::new(0, 0, false),
+            Ship::new(0, 6, false),
+            Ship::new(6, 1, true),
+        );
+        // guest board (inner)
+        let guest_board = Board::new(
+            Ship::new(3, 3, true),
+            Ship::new(5, 4, false),
+            Ship::new(0, 1, false),
+            Ship::new(0, 5, true),
+            Ship::new(6, 1, false),
+        );
+        // opening shot (outer/ main opening chanel proof)
+        let shot_0 = [0u8, 0]; // miss
 
-    //     // INPUTS
-    //     // host board (inner)
-    //     let host_board = Board::new(
-    //         Ship::new(3, 4, false),
-    //         Ship::new(9, 6, true),
-    //         Ship::new(0, 0, false),
-    //         Ship::new(0, 6, false),
-    //         Ship::new(6, 1, true),
-    //     );
-    //     // guest board (inner)
-    //     let guest_board = Board::new(
-    //         Ship::new(3, 3, true),
-    //         Ship::new(5, 4, false),
-    //         Ship::new(0, 1, false),
-    //         Ship::new(0, 5, true),
-    //         Ship::new(6, 1, false),
-    //     );
-    //     // opening shot (outer/ main opening chanel proof)
-    //     let shot = [3u8, 4];
+        // CHANNEL OPEN PROOF
+        let host = BoardCircuit::prove_inner(host_board.clone()).unwrap();
+        let guest = BoardCircuit::prove_inner(guest_board.clone()).unwrap();
+        let open_proof = prove_channel_open(host, guest, shot_0).unwrap();
+        println!("channel opened!");
 
-    //     // prove inner proofs
-    //     let host = BoardCircuit::prove_inner(host_board.clone()).unwrap();
-    //     println!("1. Host board proof successful");
-    //     let guest = BoardCircuit::prove_inner(guest_board.clone()).unwrap();
-    //     println!("2. Guest board proof successful");
+        // GUEST STATE INCREMENT #1
+        let shot_1 = [0u8, 0]; // hit
+        let shot_proof_0 = ShotCircuit::prove_inner(guest_board.clone(), shot_0).unwrap();
+        let state_increment_1 = StateIncrementCircuit::prove(
+            open_proof.clone(),
+            shot_proof_0.clone(),
+            shot_1,
+        ).unwrap();
+        println!("state increment #1");
 
-    //     // recursively prove the integrity of a zk state channel opening
-    //     _ = prove_channel_open(host, guest, shot).unwrap();
-    //     println!("channel opened!");
-    // }
+        // HOST STATE INCREMENT #1
+        let shot_2 = [1u8, 0]; // miss
+        let shot_proof_1 = ShotCircuit::prove_inner(host_board.clone(), shot_1).unwrap();
+        let state_increment_2 = StateIncrementCircuit::prove(
+            state_increment_1.clone(),
+            shot_proof_1.clone(),
+            shot_2,
+        ).unwrap();
+        println!("state increment #2");
+
+        // GUEST STATE INCREMENT #2
+        let shot_3 = [1u8, 0]; // hit
+        let shot_proof_2 = ShotCircuit::prove_inner(guest_board.clone(), shot_2).unwrap();
+        let state_increment_3 = StateIncrementCircuit::prove(
+            state_increment_2.clone(),
+            shot_proof_2.clone(),
+            shot_3,
+        ).unwrap();
+        println!("state increment #3");
+
+        // HOST STATE INCREMENT #2
+        let shot_4 = [2u8, 0]; // miss
+        let shot_proof_3 = ShotCircuit::prove_inner(host_board.clone(), shot_3).unwrap();
+        let state_increment_4 = StateIncrementCircuit::prove(
+            state_increment_3.clone(),
+            shot_proof_3.clone(),
+            shot_4,
+        ).unwrap();
+        println!("state increment #4");
+
+        // GUEST STATE INCREMENT #3
+        let shot_5 = [2u8, 0]; // hit
+        let shot_proof_4 = ShotCircuit::prove_inner(guest_board.clone(), shot_4).unwrap();
+        let state_increment_5 = StateIncrementCircuit::prove(
+            state_increment_4.clone(),
+            shot_proof_4.clone(),
+            shot_5,
+        ).unwrap();
+        println!("state increment #5");
+
+        // HOST STATE INCREMENT #3
+        let shot_6 = [2u8, 0]; // miss
+        let shot_proof_5 = ShotCircuit::prove_inner(host_board.clone(), shot_5).unwrap();
+        let state_increment_6 = StateIncrementCircuit::prove(
+            state_increment_5.clone(),
+            shot_proof_5.clone(),
+            shot_6,
+        ).unwrap();
+        println!("state increment #6");
+
+        // Check State Channel Increment Outputs
+        let output = StateIncrementCircuit::decode_public(state_increment_6.0).unwrap();
+        println!("host_damage: {:?}", output.host_damage);
+        println!("guest_damage: {:?}", output.guest_damage);
+        let expected_host_damage = 3u8;
+        let expected_guest_damage = 0u8;
+        assert_eq!(output.host_damage, expected_host_damage);
+        assert_eq!(output.guest_damage, expected_guest_damage);
+    }
+
 }
